@@ -1,4 +1,224 @@
-# GameBoard Controller
+# JoystickShield PC 控制器使用说明
+
+## 📋 项目概述
+
+这是一个完整的 JoystickShield 到 PC 键盘控制解决方案，包含：
+
+- Arduino 端摇杆检测代码
+- Python 端串口监听和键盘模拟
+- 多种游戏配置模式
+- 热键切换和自定义映射
+
+## 🔧 安装步骤
+
+### 1. 硬件连接
+```
+摇杆 X 轴  -> Arduino A0
+摇杆 Y 轴  -> Arduino A1  
+摇杆按键  -> Arduino 引脚 8
+上按钮    -> Arduino 引脚 2
+右按钮    -> Arduino 引脚 3
+下按钮    -> Arduino 引脚 4
+左按钮    -> Arduino 引脚 5
+E 按钮    -> Arduino 引脚 6
+F 按钮    -> Arduino 引脚 7
+VCC       -> Arduino 5V
+GND       -> Arduino GND
+```
+
+### 2. Arduino 代码上传
+1. 打开 `src/main.cpp`
+2. 使用 PlatformIO 或 Arduino IDE 上传到开发板
+3. 确保串口波特率设置为 115200
+
+### 3. Python 环境配置
+```bash
+# 方法1: 运行自动安装脚本
+install.bat
+
+# 方法2: 手动安装
+pip install pyserial keyboard
+```
+
+### 4. 串口配置
+- **优先串口**: 程序会优先尝试连接 **COM13**
+- **自动检测**: 如果 COM13 不可用，会自动检测其他串口
+- **手动选择**: 如果自动检测失败，可以手动选择串口
+
+> 💡 **提示**: 如果你的 Arduino 使用其他串口，程序会自动处理，无需手动修改代码
+
+## 🎮 使用方法
+
+### 启动控制器
+```bash
+# 方法1: 使用启动器
+start.bat
+
+# 方法2: 直接运行
+python advanced_controller.py
+```
+
+### 游戏配置模式
+
+#### 1. FPS 游戏模式 (默认)
+- 摇杆方向 -> WASD 移动
+- 摇杆按键 -> 空格键 (跳跃)
+- 上按钮 -> R (换弹)
+- 下按钮 -> C (蹲下)
+- 左按钮 -> Shift (奔跑)
+- 右按钮 -> Ctrl (慢走)
+- E/F 按钮 -> E/F 键
+
+#### 2. 方向键模式
+- 摇杆方向 -> 方向键
+- 摇杆按键 -> 回车键
+- 其他按钮 -> WASD + Esc/Tab
+
+#### 3. 多媒体控制模式
+- 摇杆上/下 -> 音量+/-
+- 摇杆左/右 -> 上一首/下一首
+- 摇杆按键 -> 播放/暂停
+- E 按钮 -> 静音
+- F 按钮 -> 停止
+
+#### 4. 自定义模式
+- 可在代码中自定义按键映射
+
+### 热键控制
+- `Ctrl + Shift + P`: 切换游戏配置
+- `Ctrl + C`: 退出程序
+
+## 📁 文件结构
+
+```
+GameBoard/
+├── src/
+│   └── main.cpp                 # Arduino 代码
+├── joystick_controller.py       # 基础版控制器
+├── advanced_controller.py       # 增强版控制器
+├── config.txt                   # 配置文件
+├── install.bat                  # 安装脚本
+├── start.bat                    # 启动脚本
+├── platformio.ini              # PlatformIO 配置
+└── README.md                   # 使用说明
+```
+
+## ⚙️ 高级配置
+
+### 自定义按键映射
+编辑 `advanced_controller.py` 中的 `game_profiles` 部分：
+
+```python
+GameProfile(
+    name="我的游戏",
+    key_mapping={
+        "摇杆：上": "w",
+        "摇杆按键按下": "space",
+        # ... 更多映射
+    },
+    description="自定义游戏配置"
+)
+```
+
+### 串口设置
+如果需要修改串口设置，在代码中修改：
+```python
+controller.connect_serial(port="COM3", baudrate=115200)
+```
+
+## 🔍 故障排除
+
+### 常见问题
+
+#### 1. 串口连接失败
+- 检查 Arduino 是否正确连接
+- 确认串口号是否正确
+- 检查是否有其他程序占用串口
+
+#### 2. 按键不响应
+- 确保以管理员身份运行 Python 程序
+- 检查 keyboard 库是否正确安装
+- 验证按键映射是否正确
+
+#### 3. 摇杆漂移
+- 重新校准摇杆 (`joystickShield.calibrateJoystick()`)
+- 调整死区阈值
+- 检查硬件连接
+
+#### 4. 权限错误
+```bash
+# Windows: 以管理员身份运行
+# Linux: 添加用户到 dialout 组
+sudo usermod -a -G dialout $USER
+```
+
+### 调试模式
+在代码中启用详细输出：
+```python
+# 显示所有串口数据
+print(f"📡 接收: {data}")
+
+# 显示按键状态
+print(f"🔽 按下: {key}")
+print(f"🔼 释放: {key}")
+```
+
+## 🎯 游戏兼容性
+
+### 已测试游戏
+- ✅ CS:GO / CS2
+- ✅ Minecraft
+- ✅ 任意支持键盘输入的游戏
+
+### 推荐设置
+- **FPS 游戏**: 使用 FPS 模式
+- **RPG 游戏**: 使用方向键模式
+- **媒体播放**: 使用多媒体模式
+
+## 📚 扩展功能
+
+### 添加新游戏配置
+```python
+new_profile = GameProfile(
+    name="新游戏",
+    key_mapping={
+        # 你的按键映射
+    },
+    description="游戏描述"
+)
+self.game_profiles.append(new_profile)
+```
+
+### 添加鼠标控制
+```python
+import mouse
+
+# 摇杆控制鼠标移动
+if x_pos != 0 or y_pos != 0:
+    mouse.move(x_pos * sensitivity, y_pos * sensitivity, absolute=False)
+```
+
+### 添加宏功能
+```python
+def execute_macro():
+    keyboard.press('ctrl')
+    keyboard.press('c')
+    time.sleep(0.1)
+    keyboard.release('c')
+    keyboard.release('ctrl')
+```
+
+## 📧 技术支持
+
+如有问题，请检查：
+1. 硬件连接是否正确
+2. 依赖库是否安装完整
+3. 是否以管理员权限运行
+4. Arduino 代码是否正确上传
+
+## 📄 许可证
+
+本项目基于 MIT 许可证开源。 Controller
 
 基于 Arduino 的游戏手柄控制器项目，使用 JoystickShield 库来处理摇杆和按钮输入。
 
