@@ -199,7 +199,7 @@ class AdvancedJoystickController:
                 x_pos = int(x_str)
                 y_pos = int(y_str)
                 
-                # 检测摇杆回中 (死区范围 ±10)
+                # 先检测摇杆是否在死区内 (死区范围 ±10)
                 if abs(x_pos) <= 10 and abs(y_pos) <= 10:
                     if self.last_position["x"] != 0 or self.last_position["y"] != 0:
                         # 释放所有方向键
@@ -209,6 +209,9 @@ class AdvancedJoystickController:
                             if action in profile.key_mapping:
                                 self.release_keys(profile.key_mapping[action])
                         print(f"🎯 摇杆回中: X={x_pos}, Y={y_pos}")
+                else:
+                    # 只有不在死区时才根据位置数据触发移动
+                    self.handle_movement_from_position(x_pos, y_pos)
                 
                 # 更新位置记录
                 self.last_position = {"x": x_pos, "y": y_pos}
@@ -219,6 +222,95 @@ class AdvancedJoystickController:
                     
         except Exception as e:
             print(f"⚠️  位置数据解析错误: {e}")
+    
+    def handle_movement_from_position(self, x_pos, y_pos):
+        """根据摇杆位置触发移动"""
+        # 死区范围
+        dead_zone = 10
+        
+        # 双重检查：确保不在死区内
+        if abs(x_pos) <= dead_zone and abs(y_pos) <= dead_zone:
+            # 如果在死区内，只释放按键，不触发新按键
+            profile = self.game_profiles[self.current_profile]
+            direction_actions = ["摇杆：上", "摇杆：下", "摇杆：左", "摇杆：右"]
+            for action in direction_actions:
+                if action in profile.key_mapping:
+                    keys = profile.key_mapping[action]
+                    if isinstance(keys, str):
+                        keys = [keys]
+                    for key in keys:
+                        if self.key_states[key]:
+                            self.release_keys(key)
+            print(f"🎯 摇杆在死区内，释放所有方向键: X={x_pos}, Y={y_pos}")
+            return
+        
+        # 获取当前配置
+        profile = self.game_profiles[self.current_profile]
+        
+        # 先释放所有方向键
+        direction_actions = ["摇杆：上", "摇杆：下", "摇杆：左", "摇杆：右"]
+        for action in direction_actions:
+            if action in profile.key_mapping:
+                keys = profile.key_mapping[action]
+                if isinstance(keys, str):
+                    keys = [keys]
+                for key in keys:
+                    if self.key_states[key]:
+                        self.release_keys(key)
+        
+        # 根据位置确定需要触发的动作
+        actions_to_trigger = []
+        
+        # 垂直方向 (Y轴)
+        if y_pos < -dead_zone:  # 向上
+            actions_to_trigger.append("摇杆：上")
+        elif y_pos > dead_zone:  # 向下
+            actions_to_trigger.append("摇杆：下")
+            
+        # 水平方向 (X轴)
+        if x_pos < -dead_zone:  # 向左
+            actions_to_trigger.append("摇杆：左")
+        elif x_pos > dead_zone:  # 向右
+            actions_to_trigger.append("摇杆：右")
+        
+        # 触发相应的动作
+        if actions_to_trigger:
+            all_keys = []
+            for action in actions_to_trigger:
+                if action in profile.key_mapping:
+                    keys = profile.key_mapping[action]
+                    if isinstance(keys, str):
+                        all_keys.append(keys)
+                    elif isinstance(keys, list):
+                        all_keys.extend(keys)
+            
+            # 去重并按下键
+            unique_keys = list(set(all_keys))
+            if unique_keys:
+                self.press_keys(unique_keys)
+                
+                # 显示移动信息
+                direction_str = ""
+                if "摇杆：上" in actions_to_trigger and "摇杆：左" in actions_to_trigger:
+                    direction_str = "左上"
+                elif "摇杆：上" in actions_to_trigger and "摇杆：右" in actions_to_trigger:
+                    direction_str = "右上"
+                elif "摇杆：下" in actions_to_trigger and "摇杆：左" in actions_to_trigger:
+                    direction_str = "左下"
+                elif "摇杆：下" in actions_to_trigger and "摇杆：右" in actions_to_trigger:
+                    direction_str = "右下"
+                elif "摇杆：上" in actions_to_trigger:
+                    direction_str = "上"
+                elif "摇杆：下" in actions_to_trigger:
+                    direction_str = "下"
+                elif "摇杆：左" in actions_to_trigger:
+                    direction_str = "左"
+                elif "摇杆：右" in actions_to_trigger:
+                    direction_str = "右"
+                
+                print(f"🎮 摇杆移动: {direction_str} ({'+'.join(unique_keys)}) [{self.current_profile}模式]")
+        else:
+            print(f"🤔 位置计算异常: X={x_pos}, Y={y_pos} (应该在死区外但没有按键触发)")
     
     def process_joystick_data(self, data):
         """处理摇杆数据"""

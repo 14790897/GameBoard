@@ -17,6 +17,9 @@ class JoystickController:
         self.serial_port = None
         self.is_running = False
         self.key_states = defaultdict(bool)  # 记录按键状态，避免重复触发
+        self.last_position = {"x": 0, "y": 0}  # 记录上一次摇杆位置
+        self.position_history = []  # 位置历史记录
+        self.max_history = 3  # 保留最近几次位置记录
         
         # 按键映射配置
         self.key_mapping = {
@@ -182,7 +185,10 @@ class JoystickController:
                 x_pos = int(x_str)
                 y_pos = int(y_str)
                 
-                # 检测摇杆回中 (死区范围 ±10)
+                # 更新位置历史
+                self.update_position_history(x_pos, y_pos)
+                
+                # 先检测摇杆是否在死区内 (死区范围 ±10)
                 if abs(x_pos) <= 10 and abs(y_pos) <= 10:
                     # 释放所有方向键
                     direction_keys = ["w", "a", "s", "d"]
@@ -191,11 +197,117 @@ class JoystickController:
                             self.release_keys(key)
                     print(f"🎯 摇杆回中: X={x_pos}, Y={y_pos}")
                 else:
+                    # 检查是否正在回中过程中
+                    if self.is_returning_to_center(x_pos, y_pos):
+                        print(f"🔄 摇杆正在回中，跳过移动触发: X={x_pos}, Y={y_pos}")
+                        return
+                    
+                    # 只有不在死区且不在回中过程中时才触发移动
+                    self.handle_movement_from_position(x_pos, y_pos)
                     print(f"📍 摇杆位置: X={x_pos}, Y={y_pos}")
+                
+                # 更新最后位置
+                self.last_position = {"x": x_pos, "y": y_pos}
                     
         except Exception as e:
             print(f"⚠️  位置数据解析错误: {e}")
             print(f"原始数据: {data}")
+    
+    def update_position_history(self, x_pos, y_pos):
+        """更新位置历史记录"""
+        self.position_history.append({"x": x_pos, "y": y_pos})
+        
+        # 保持历史记录数量不超过最大值
+        if len(self.position_history) > self.max_history:
+            self.position_history.pop(0)
+    
+    def is_returning_to_center(self, x_pos, y_pos):
+        """判断摇杆是否正在回中"""
+        if len(self.position_history) < 2:
+            return False
+        
+        # 计算当前位置到中心的距离
+        current_distance = abs(x_pos) + abs(y_pos)
+        
+        # 计算前一个位置到中心的距离
+        prev_pos = self.position_history[-2]
+        prev_distance = abs(prev_pos["x"]) + abs(prev_pos["y"])
+        
+        # 如果距离在减小，说明正在向中心移动
+        is_approaching_center = current_distance < prev_distance
+        
+        # 如果前一个位置不在死区内，而且正在向中心靠近，认为是回中过程
+        dead_zone = 10
+        prev_in_deadzone = abs(prev_pos["x"]) <= dead_zone and abs(prev_pos["y"]) <= dead_zone
+        
+        # 回中判断条件：
+        # 1. 正在向中心靠近
+        # 2. 前一个位置不在死区内（避免在死区内的小幅震动）
+        # 3. 当前位置距离中心的距离小于前一个位置的80%（明显的回中趋势）
+        return (is_approaching_center and 
+                not prev_in_deadzone and 
+                current_distance < prev_distance * 0.8)
+    
+    def handle_movement_from_position(self, x_pos, y_pos):
+        """根据摇杆位置触发移动"""
+        # 死区范围
+        dead_zone = 10
+        
+        # 双重检查：确保不在死区内
+        if abs(x_pos) <= dead_zone and abs(y_pos) <= dead_zone:
+            # 如果在死区内，只释放按键，不触发新按键
+            direction_keys = ["w", "a", "s", "d"]
+            for key in direction_keys:
+                if self.key_states[key]:
+                    self.release_keys(key)
+            print(f"🎯 摇杆在死区内，释放所有方向键: X={x_pos}, Y={y_pos}")
+            return
+        
+        # 先释放所有方向键
+        direction_keys = ["w", "a", "s", "d"]
+        for key in direction_keys:
+            if self.key_states[key]:
+                self.release_keys(key)
+        
+        # 根据位置确定需要按下的键
+        keys_to_press = []
+        
+        # 垂直方向 (Y轴)
+        if y_pos < -dead_zone:  # 向上
+            keys_to_press.append("w")
+        elif y_pos > dead_zone:  # 向下
+            keys_to_press.append("s")
+            
+        # 水平方向 (X轴)
+        if x_pos < -dead_zone:  # 向左
+            keys_to_press.append("a")
+        elif x_pos > dead_zone:  # 向右
+            keys_to_press.append("d")
+        
+        # 按下相应的键
+        if keys_to_press:
+            self.press_keys(keys_to_press)
+            direction_str = ""
+            if "w" in keys_to_press and "a" in keys_to_press:
+                direction_str = "左上"
+            elif "w" in keys_to_press and "d" in keys_to_press:
+                direction_str = "右上"
+            elif "s" in keys_to_press and "a" in keys_to_press:
+                direction_str = "左下"
+            elif "s" in keys_to_press and "d" in keys_to_press:
+                direction_str = "右下"
+            elif "w" in keys_to_press:
+                direction_str = "上"
+            elif "s" in keys_to_press:
+                direction_str = "下"
+            elif "a" in keys_to_press:
+                direction_str = "左"
+            elif "d" in keys_to_press:
+                direction_str = "右"
+            
+            print(f"🎮 摇杆移动: {direction_str} ({'+'.join(keys_to_press)})")
+        else:
+            print(f"🤔 位置计算异常: X={x_pos}, Y={y_pos} (应该在死区外但没有按键触发)")
     
     def serial_listener(self):
         """串口监听线程"""
