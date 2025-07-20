@@ -1,126 +1,160 @@
 #include <JoystickShield.h>
 
-// 创建 JoystickShield 对象
+// Create JoystickShield object
 JoystickShield joystickShield;
 
+// Variable to track joystick center state
+bool wasNotCenter = false;
+
+// Heartbeat variables
+unsigned long lastHeartbeat = 0;
+const unsigned long heartbeatInterval = 5000; // 5 seconds
+
 void setup() {
-    // 初始化串口通信
+    // Initialize serial communication
     Serial.begin(115200);
-    
-    // 等待串口准备就绪
+
+    // Wait for serial port to be ready
     delay(1000);
-    
-    Serial.println("=== JoystickShield 测试程序 ===");
-    Serial.println("正在校准摇杆...");
-    
-    // 校准摇杆中心位置
+
+    Serial.println("=== JoystickShield Game Controller ===");
+    Serial.println("Calibrating joystick...");
+
+    // Calibrate joystick center position
     joystickShield.calibrateJoystick();
-    
-    Serial.println("校准完成！");
-    Serial.println("开始检测摇杆和按钮状态...");
+
+    Serial.println("Calibration complete!");
+    Serial.println("Starting joystick and button detection...");
     Serial.println();
-    
-    // 硬件连接说明（默认引脚配置）：
-    // 摇杆 X 轴 -> A0
-    // 摇杆 Y 轴 -> A1  
-    // 摇杆按键 -> 引脚 8
-    // 上按钮   -> 引脚 2
-    // 右按钮   -> 引脚 3
-    // 下按钮   -> 引脚 4
-    // 左按钮   -> 引脚 5
-    // E 按钮   -> 引脚 6
-    // F 按钮   -> 引脚 7
-    
-    // 如果使用不同的引脚，可以取消下面的注释并修改：
-    // joystickShield.setJoystickPins(0, 1);  // X轴, Y轴
+
+    // Hardware connection description (default pin configuration):
+    // Joystick X-axis -> A0
+    // Joystick Y-axis -> A1
+    // Joystick button -> Pin 8
+    // Up button       -> Pin 2
+    // Right button    -> Pin 3
+    // Down button     -> Pin 4
+    // Left button     -> Pin 5
+    // E button        -> Pin 6
+    // F button        -> Pin 7
+
+    // If using different pins, uncomment and modify the following:
+    // joystickShield.setJoystickPins(0, 1);  // X-axis, Y-axis
     // joystickShield.setButtonPins(8, 2, 3, 4, 5, 7, 6); // K,A,B,C,D,F,E
 }
 
 void loop() {
-    // 处理摇杆和按钮事件
+    // Process joystick and button events
     joystickShield.processEvents();
-    
-    // 检测摇杆方向（8个方向）
+
+    // Detect joystick directions (8 directions)
     if (joystickShield.isUp()) {
-        Serial.println("摇杆：上");
+        Serial.println("Joystick Up");
     }
-    
+
     if (joystickShield.isRightUp()) {
-        Serial.println("摇杆：右上");
+        Serial.println("Joystick RightUp");
     }
-    
+
     if (joystickShield.isRight()) {
-        Serial.println("摇杆：右");
+        Serial.println("Joystick Right");
     }
-    
+
     if (joystickShield.isRightDown()) {
-        Serial.println("摇杆：右下");
+        Serial.println("Joystick RightDown");
     }
-    
+
     if (joystickShield.isDown()) {
-        Serial.println("摇杆：下");
+        Serial.println("Joystick Down");
     }
-    
+
     if (joystickShield.isLeftDown()) {
-        Serial.println("摇杆：左下");
+        Serial.println("Joystick LeftDown");
     }
-    
+
     if (joystickShield.isLeft()) {
-        Serial.println("摇杆：左");
+        Serial.println("Joystick Left");
     }
-    
+
     if (joystickShield.isLeftUp()) {
-        Serial.println("摇杆：左上");
+        Serial.println("Joystick LeftUp");
     }
-    
-    // 检测摇杆按键
+
+    // Detect joystick button
     if (joystickShield.isJoystickButton()) {
-        Serial.println("摇杆按键按下");
+        Serial.println("Joystick Button Clicked");
     }
-    
-    // 检测方向按钮
+
+    // Detect direction buttons
     if (joystickShield.isUpButton()) {
-        Serial.println("上按钮按下");
+        Serial.println("Up Button Clicked");
     }
-    
+
     if (joystickShield.isRightButton()) {
-        Serial.println("右按钮按下");
+        Serial.println("Right Button Clicked");
     }
-    
+
     if (joystickShield.isDownButton()) {
-        Serial.println("下按钮按下");
+        Serial.println("Down Button Clicked");
     }
-    
+
     if (joystickShield.isLeftButton()) {
-        Serial.println("左按钮按下");
+        Serial.println("Left Button Clicked");
     }
-    
-    // 检测功能按钮
+
+    // Detect function buttons
     if (joystickShield.isEButton()) {
-        Serial.println("E 按钮按下");
+        Serial.println("E Button Clicked");
     }
-    
+
     if (joystickShield.isFButton()) {
-        Serial.println("F 按钮按下");
+        Serial.println("F Button Clicked");
     }
-    
-    // 检测摇杆是否不在中心位置
-    if (joystickShield.isNotCenter()) {
-        Serial.println("摇杆偏离中心");
+
+    // Detect joystick center state changes
+    bool currentNotCenter = joystickShield.isNotCenter();
+
+    if (currentNotCenter) {
+        // Joystick is not in center
+        if (!wasNotCenter) {
+            // Just moved away from center
+            Serial.println("Joystick NotCenter");
+        }
+        wasNotCenter = true;
+    } else {
+        // Joystick is in center
+        if (wasNotCenter) {
+            // Just returned to center - send center event
+            Serial.println("Joystick Center");
+        }
+        wasNotCenter = false;
     }
-    
-    // 显示摇杆位置数据（-100 到 100）
+
+    // Display joystick position data (-100 to 100)
     int xPos = joystickShield.xAmplitude();
     int yPos = joystickShield.yAmplitude();
-    
-    // 只在摇杆移动时显示位置信息
+
+    // Only display position info when joystick is moved
     if (xPos != 0 || yPos != 0) {
-        Serial.print("摇杆位置 -> X: ");
+        Serial.print("Joystick Position -> X: ");
         Serial.print(xPos);
         Serial.print(", Y: ");
         Serial.println(yPos);
     }
-    
-    // 延迟避免输出过快
+    static bool wasNotCenter = false;  // 静态变量，保持状态
+
+    bool nowNotCenter = joystickShield.isNotCenter();
+    if (wasNotCenter && !nowNotCenter) {
+        Serial.println("Joystick Centered");
+    }
+    wasNotCenter = nowNotCenter;
+    // Send heartbeat every 5 seconds to confirm Arduino is running
+    unsigned long currentTime = millis();
+    if (currentTime - lastHeartbeat >= heartbeatInterval) {
+        // Serial.println("Arduino Heartbeat");
+        lastHeartbeat = currentTime;
+    }
+
+    // Delay to avoid too fast output
     delay(100);
 }

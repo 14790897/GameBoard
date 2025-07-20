@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-JoystickShield PC 控制器 - 最终游戏版本
-专门针对游戏优化，确保按键能被正确识别
+JoystickShield PC Controller - Final Game Version
+Optimized for gaming, ensures proper key recognition
 """
 
 import serial
@@ -12,7 +12,7 @@ import sys
 import ctypes
 from collections import defaultdict
 
-# 导入输入库
+# Import input libraries
 try:
     import win32api
     import win32con
@@ -34,66 +34,71 @@ class GameJoystickController:
         self.key_states = defaultdict(bool)
         self.last_position = {"x": 0, "y": 0}
 
-        # 长按功能相关
-        self.button_press_times = {}  # 记录按键按下的时间
-        self.button_states = {}  # 记录按键状态
-        self.long_press_threshold = 0.5  # 长按阈值（秒）
-        self.long_press_triggered = {}  # 记录是否已触发长按
+        # Long press functionality
+        self.button_press_times = {}  # Record button press times
+        self.button_states = {}  # Record button states
+        self.long_press_threshold = 0.2  # Long press threshold (seconds) - 200ms
+        self.long_press_triggered = {}  # Record if long press has been triggered
+        self.short_press_executed = {}  # Record if short press has been executed
 
-        # 方向键自动释放相关
-        self.last_direction_time = {}  # 记录最后一次方向键触发时间
-        self.direction_timeout = 0.2  # 方向键超时时间（秒）
-        
-        # 使用最兼容的输入方法
+        # Button auto-release functionality (Arduino only sends press events)
+        self.button_last_seen = {}  # Record last time button was detected
+        self.button_timeout = 0.15  # Button timeout (seconds) - if no signal received for this time, consider button released
+
+        # Direction key auto-release functionality
+        self.last_direction_time = {}  # Record last direction key trigger time
+        self.direction_timeout = 0.15  # Direction key timeout (seconds) - quick release when joystick stops
+
+        # Use most compatible input method
         self.use_win32 = WIN32_AVAILABLE
         
-        # Windows 虚拟键码映射
+        # Windows virtual key code mapping
         self.vk_codes = {
             'w': 0x57, 'a': 0x41, 's': 0x53, 'd': 0x44,
             'v': 0x56, 'space': 0x20, 'e': 0x45, 'f': 0x46,
             'up': 0x26, 'down': 0x28, 'left': 0x25, 'right': 0x27,
-            'o': 0x4F, 'j': 0x4A, 'i': 0x49, 'k': 0x4B,  # 基本按键
-            'shift': 0x10, 'ctrl': 0x11, 'alt': 0x12  # 修饰键
+            'o': 0x4F, 'j': 0x4A, 'i': 0x49, 'k': 0x4B,  # Basic keys
+            'shift': 0x10, 'ctrl': 0x11, 'alt': 0x12  # Modifier keys
         }
         
-        # 按键映射配置
+        # Key mapping configuration
         self.key_mapping = {
-            # 摇杆方向 -> 键盘按键 (与按钮映射保持一致)
-            "摇杆：上": "w",      # 对应上按钮
-            "摇杆：下": "s",      # 对应下按钮
-            "摇杆：左": "a",      # 对应左按钮
-            "摇杆：右": "d",      # 对应右按钮
-            "摇杆：左上": ["a", "w"],    # 上+左
-            "摇杆：右上": ["d", "w"],    # 上+右
-            "摇杆：左下": ["a", "s"],    # 下+左
-            "摇杆：右下": ["d", "s"],    # 下+右
+            # Joystick directions -> Keyboard keys (consistent with button mapping)
+            "Joystick Up": "w",           # Corresponds to up button
+            "Joystick Down": "s",         # Corresponds to down button
+            "Joystick Left": "a",         # Corresponds to left button
+            "Joystick Right": "d",        # Corresponds to right button
+            "Joystick LeftUp": ["a", "w"],     # Up + Left
+            "Joystick RightUp": ["d", "w"],    # Up + Right
+            "Joystick LeftDown": ["a", "s"],   # Down + Left
+            "Joystick RightDown": ["d", "s"],  # Down + Right
 
-            # 按钮 -> 键盘按键（短按）
-            "摇杆按键按下": "f",
-            "上按钮按下": "o",
-            "下按钮按下": "j",
-            "左按钮按下": "i",
-            "右按钮按下": "k",
-            "E 按钮按下": "e",
-            "F 按钮按下": "v",
+            # Buttons -> Keyboard keys (short press)
+            "Joystick Button Clicked": "f",
+            "Up Button Clicked": "o",
+            "Down Button Clicked": "j",
+            "Left Button Clicked": "i",
+            "Right Button Clicked": "k",
+            "E Button Clicked": "e",
+            "F Button Clicked": "v",
 
-            # 特殊功能
-            "摇杆偏离中心": None,  # 不映射按键
+            # Special functions
+            "Joystick NotCenter": None,  # No key mapping
         }
 
-        # 长按映射配置
+        # Long press mapping configuration
         self.long_press_mapping = {
-            "摇杆按键": "space",  # 长按摇杆按键 -> 空格
-            "上按钮": "up",       # 长按上按钮 -> 上方向键
-            "下按钮": "down",     # 长按下按钮 -> 下方向键
-            "左按钮": "left",     # 长按左按钮 -> 左方向键
-            "右按钮": "right",    # 长按右按钮 -> 右方向键
-            "E 按钮": "shift",    # 长按E按钮 -> Shift
-            "F 按钮": "ctrl",     # 长按F按钮 -> Ctrl
+            "Joystick Button": "space",   # Long press joystick button -> Space
+            "Up Button": "up",            # Long press up button -> Up arrow key
+            "Down Button": "down",        # Long press down button -> Down arrow key
+            "Left Button": "left",        # Long press left button -> Left arrow key
+            "Right Button": "right",      # Long press right button -> Right arrow key
+            "E Button": "shift",          # Long press E button -> Shift
+            "F Button": "ctrl",           # Long press F button -> Ctrl
         }
     
     def get_foreground_window_title(self):
-        """获取当前活动窗口标题"""
+        """Get current active window title"""
         if not WIN32_AVAILABLE:
             return "Unknown"
         try:
@@ -101,160 +106,160 @@ class GameJoystickController:
             return win32gui.GetWindowText(hwnd)
         except:
             return "Unknown"
-    
+
     def ensure_game_focus(self):
-        """确保游戏窗口获得焦点"""
+        """Ensure game window has focus"""
         window_title = self.get_foreground_window_title()
         if "python" in window_title.lower() or "cmd" in window_title.lower():
-            print(f"⚠️  当前活动窗口: {window_title}")
-            print("请切换到游戏窗口！")
+            print(f"⚠️  Current active window: {window_title}")
+            print("Please switch to game window!")
             return False
         return True
     
     def press_key_win32(self, key):
-        """使用 Win32 API 按下按键"""
+        """Press key using Win32 API"""
         if not self.use_win32 or key not in self.vk_codes:
             return False
-        
+
         try:
-            # 确保游戏窗口处于活动状态
+            # Ensure game window is active
             if not self.ensure_game_focus():
                 return False
-            
+
             vk_code = self.vk_codes[key]
             win32api.keybd_event(vk_code, 0, 0, 0)
             return True
         except Exception as e:
-            print(f"❌ Win32 按键失败 {key}: {e}")
+            print(f"❌ Win32 key press failed {key}: {e}")
             return False
-    
+
     def release_key_win32(self, key):
-        """使用 Win32 API 释放按键"""
+        """Release key using Win32 API"""
         if not self.use_win32 or key not in self.vk_codes:
             return False
-        
+
         try:
             vk_code = self.vk_codes[key]
             win32api.keybd_event(vk_code, 0, win32con.KEYEVENTF_KEYUP, 0)
             return True
         except Exception as e:
-            print(f"❌ Win32 释放失败 {key}: {e}")
+            print(f"❌ Win32 key release failed {key}: {e}")
             return False
     
     def press_key_keyboard(self, key):
-        """使用 keyboard 库按下按键"""
+        """Press key using keyboard library"""
         if not KEYBOARD_AVAILABLE:
             return False
         try:
             keyboard.press(key)
             return True
         except Exception as e:
-            print(f"❌ keyboard 按键失败 {key}: {e}")
+            print(f"❌ keyboard key press failed {key}: {e}")
             return False
-    
+
     def release_key_keyboard(self, key):
-        """使用 keyboard 库释放按键"""
+        """Release key using keyboard library"""
         if not KEYBOARD_AVAILABLE:
             return False
         try:
             keyboard.release(key)
             return True
         except Exception as e:
-            print(f"❌ keyboard 释放失败 {key}: {e}")
+            print(f"❌ keyboard key release failed {key}: {e}")
             return False
     
     def press_keys_continuous(self, keys):
-        """按下按键（持续状态）"""
+        """Press keys (continuous state)"""
         if isinstance(keys, str):
             keys = [keys]
-            
+
         for key in keys:
             if not self.key_states[key]:
                 success = False
-                
-                # 优先使用 Win32 API
+
+                # Prefer Win32 API
                 if self.use_win32:
                     success = self.press_key_win32(key)
                     method = "Win32"
                 else:
                     success = self.press_key_keyboard(key)
                     method = "keyboard"
-                
-                # 如果首选方法失败，尝试备用方法
+
+                # If preferred method fails, try backup method
                 if not success:
                     if self.use_win32 and KEYBOARD_AVAILABLE:
                         success = self.press_key_keyboard(key)
-                        method = "keyboard(备用)"
+                        method = "keyboard(backup)"
                     elif not self.use_win32 and WIN32_AVAILABLE:
                         success = self.press_key_win32(key)
-                        method = "Win32(备用)"
-                
+                        method = "Win32(backup)"
+
                 if success:
                     self.key_states[key] = True
-                    print(f"🔽 按下: {key} ({method})")
+                    print(f"🔽 Press: {key} ({method})")
                 else:
-                    print(f"❌ 无法按下按键: {key}")
+                    print(f"❌ Unable to press key: {key}")
     
     def press_keys(self, keys):
-        """按下按键（按钮事件）"""
+        """Press keys (button event)"""
         if isinstance(keys, str):
             keys = [keys]
-            
+
         for key in keys:
             success_press = False
             success_release = False
             method = ""
-            
-            # 按下
+
+            # Press
             if self.use_win32:
                 success_press = self.press_key_win32(key)
                 method = "Win32"
             else:
                 success_press = self.press_key_keyboard(key)
                 method = "keyboard"
-            
+
             if success_press:
-                print(f"🔽 按下: {key} ({method})")
-                time.sleep(0.05)  # 短暂延迟
-                
-                # 释放
+                print(f"🔽 Press: {key} ({method})")
+                time.sleep(0.05)  # Brief delay
+
+                # Release
                 if self.use_win32:
                     success_release = self.release_key_win32(key)
                 else:
                     success_release = self.release_key_keyboard(key)
-                
+
                 if success_release:
-                    print(f"🔼 释放: {key} ({method})")
+                    print(f"🔼 Release: {key} ({method})")
                 else:
-                    print(f"❌ 无法释放按键: {key}")
+                    print(f"❌ Unable to release key: {key}")
             else:
-                print(f"❌ 无法按下按键: {key}")
+                print(f"❌ Unable to press key: {key}")
     
     def release_keys(self, keys):
-        """释放按键"""
+        """Release keys"""
         if isinstance(keys, str):
             keys = [keys]
-            
+
         for key in keys:
             if self.key_states[key]:
                 success = False
                 method = ""
-                
+
                 if self.use_win32:
                     success = self.release_key_win32(key)
                     method = "Win32"
                 else:
                     success = self.release_key_keyboard(key)
                     method = "keyboard"
-                
+
                 if success:
                     self.key_states[key] = False
-                    print(f"🔼 释放: {key} ({method})")
+                    print(f"🔼 Release: {key} ({method})")
                 else:
-                    print(f"❌ 无法释放按键: {key}")
-    
+                    print(f"❌ Unable to release key: {key}")
+
     def release_all_keys(self):
-        """释放所有按键"""
+        """Release all keys"""
         for key, pressed in self.key_states.items():
             if pressed:
                 if self.use_win32:
@@ -264,18 +269,24 @@ class GameJoystickController:
                 self.key_states[key] = False
 
     def handle_button_press(self, button_name):
-        """处理按钮按下事件"""
+        """Handle button press event"""
         current_time = time.time()
 
-        # 记录按下时间
-        self.button_press_times[button_name] = current_time
-        self.button_states[button_name] = True
-        self.long_press_triggered[button_name] = False
+        # Update last time button was detected
+        self.button_last_seen[button_name] = current_time
 
-        print(f"🔽 按钮按下: {button_name}")
+        # If button was not pressed before, this is a new press event
+        if not self.button_states.get(button_name, False):
+            # Record press time
+            self.button_press_times[button_name] = current_time
+            self.button_states[button_name] = True
+            self.long_press_triggered[button_name] = False
+            self.short_press_executed[button_name] = False
+            print(f"🔽 Button pressed: {button_name} (waiting to determine short/long press)")
+        # If button is already in pressed state, only update last detection time, don't process repeatedly
 
     def handle_button_release(self, button_name):
-        """处理按钮释放事件"""
+        """Handle button release event"""
         if button_name not in self.button_states or not self.button_states[button_name]:
             return
 
@@ -285,44 +296,29 @@ class GameJoystickController:
 
         self.button_states[button_name] = False
 
-        # 如果已经触发了长按，只需要释放长按键
-        if self.long_press_triggered.get(button_name, False):
+        # Determine if it's a long press or short press based on duration
+        if hold_duration >= self.long_press_threshold:
+            # Long press: execute long press action
             long_press_key = self.long_press_mapping.get(button_name)
             if long_press_key:
-                self.release_single_key(long_press_key)
-                print(f"🔼 长按释放: {button_name} -> {long_press_key} (持续 {hold_duration:.2f}s)")
+                self.press_keys([long_press_key])  # Execute long press as a key press event
+                print(f"� Long press: {button_name} -> {long_press_key} (duration {hold_duration:.2f}s)")
         else:
-            # 短按：执行短按动作
-            short_press_action = f"{button_name}按下"
+            # Short press: execute short press action
+            short_press_action = f"{button_name} Clicked"
             if short_press_action in self.key_mapping:
                 keys = self.key_mapping[short_press_action]
                 if keys:
                     self.press_keys(keys)
-                    print(f"👆 短按: {button_name} -> {keys} (持续 {hold_duration:.2f}s)")
+                    print(f"👆 Short press: {button_name} -> {keys} (duration {hold_duration:.2f}s)")
 
     def check_long_press(self):
-        """检查是否有按键达到长按条件"""
-        current_time = time.time()
-
-        for button_name, is_pressed in self.button_states.items():
-            if not is_pressed:
-                continue
-
-            press_time = self.button_press_times.get(button_name, current_time)
-            hold_duration = current_time - press_time
-
-            # 如果达到长按阈值且还未触发长按
-            if hold_duration >= self.long_press_threshold and not self.long_press_triggered.get(button_name, False):
-                self.long_press_triggered[button_name] = True
-
-                # 触发长按动作
-                long_press_key = self.long_press_mapping.get(button_name)
-                if long_press_key:
-                    self.press_single_key_continuous(long_press_key)
-                    print(f"🔽 长按触发: {button_name} -> {long_press_key} (持续 {hold_duration:.2f}s)")
+        """Check if any key has reached long press condition - now disabled, using release-time detection"""
+        # This function is now disabled since we determine long/short press on button release
+        pass
 
     def press_single_key_continuous(self, key):
-        """按下单个按键（持续状态）"""
+        """Press single key (continuous state)"""
         if not self.key_states[key]:
             success = False
             method = ""
@@ -336,10 +332,10 @@ class GameJoystickController:
 
             if success:
                 self.key_states[key] = True
-                print(f"🔽 按下: {key} ({method})")
+                print(f"🔽 Press: {key} ({method})")
 
     def release_single_key(self, key):
-        """释放单个按键"""
+        """Release single key"""
         if self.key_states[key]:
             success = False
             method = ""
@@ -353,7 +349,7 @@ class GameJoystickController:
 
             if success:
                 self.key_states[key] = False
-                print(f"🔼 释放: {key} ({method})")
+                print(f"🔼 Release: {key} ({method})")
 
     def press_direction_keys(self, keys, direction_data):
         """处理方向键按下（短按模式）"""
@@ -371,7 +367,7 @@ class GameJoystickController:
         print(f"🎮 方向短按: {direction_data} -> {'+'.join(keys)}")
 
     def release_all_direction_keys(self):
-        """释放所有方向键"""
+        """Release all direction keys"""
         direction_keys = ["w", "a", "s", "d"]
         released_keys = []
 
@@ -381,229 +377,280 @@ class GameJoystickController:
                 released_keys.append(key)
 
         if released_keys:
-            print(f"🎯 摇杆回中，释放方向键: {'+'.join(released_keys)}")
+            print(f"🎯 Joystick centered, releasing direction keys: {'+'.join(released_keys)}")
 
     def check_direction_timeout(self):
-        """检查方向键是否超时，如果超时则释放"""
+        """Check if direction keys have timed out, release if so"""
         current_time = time.time()
         direction_keys = ["w", "a", "s", "d"]
+        keys_to_release = []
 
         for key in direction_keys:
             if key in self.last_direction_time:
                 time_since_last = current_time - self.last_direction_time[key]
                 if time_since_last > self.direction_timeout:
-                    # 超时，释放按键
-                    if self.key_states[key]:
-                        self.release_single_key(key)
-                        print(f"⏰ 方向键超时释放: {key}")
-                    # 清除记录
-                    del self.last_direction_time[key]
+                    # Timeout, release key
+                    keys_to_release.append(key)
+            elif self.key_states.get(key, False):
+                # Key is pressed but no timestamp recorded, release it
+                keys_to_release.append(key)
+
+        # Release all timed out keys
+        for key in keys_to_release:
+            if self.key_states.get(key, False):
+                self.release_single_key(key)
+                print(f"⏰ Direction key timeout release: {key}")
+            # Clear record
+            if key in self.last_direction_time:
+                del self.last_direction_time[key]
+
+    def check_button_timeout(self):
+        """Check if buttons have timed out, auto-release if so"""
+        current_time = time.time()
+        buttons_to_release = []
+
+        for button_name, last_seen_time in self.button_last_seen.items():
+            if self.button_states.get(button_name, False):
+                time_since_last = current_time - last_seen_time
+                if time_since_last > self.button_timeout:
+                    # Button timeout, auto-release
+                    buttons_to_release.append(button_name)
+
+        # Release timed out buttons
+        for button_name in buttons_to_release:
+            print(f"⏰ Button timeout auto-release: {button_name}")
+            self.handle_button_release(button_name)
+            # Clear record
+            if button_name in self.button_last_seen:
+                del self.button_last_seen[button_name]
     
     def connect_serial(self, baudrate=115200):
-        """连接串口 - 自动查找可用端口"""
+        """Connect to serial port - auto-find available port"""
         return self.auto_find_port(baudrate)
-    
+
     def auto_find_port(self, baudrate=115200):
-        """自动查找Arduino端口"""
-        print("🔍 自动查找Arduino端口...")
+        """Auto-find Arduino port"""
+        print("🔍 Auto-searching for Arduino port...")
         ports = serial.tools.list_ports.comports()
 
         if not ports:
-            print("❌ 没有找到任何串口设备")
+            print("❌ No serial port devices found")
             return False
 
-        print(f"发现 {len(ports)} 个串口设备:")
+        print(f"Found {len(ports)} serial port devices:")
         for i, port in enumerate(ports, 1):
             print(f"  {i}. {port.device} - {port.description}")
 
-        # 优先尝试包含 Arduino 关键词的端口
+        # Prioritize ports containing Arduino keywords
         arduino_ports = []
         other_ports = []
 
         for port in ports:
             description = port.description.lower()
-            if any(keyword in description for keyword in ['arduino', 'ch340', 'ch341', 'cp210', 'ftdi']):
+            if any(keyword in description for keyword in ['arduino', 'ch340', 'cp210', 'ftdi']):
                 arduino_ports.append(port)
             else:
                 other_ports.append(port)
 
-        # 先尝试 Arduino 相关端口，然后尝试其他端口
+        # Try Arduino-related ports first, then other ports
         all_ports = arduino_ports + other_ports
 
         for port in all_ports:
             try:
-                print(f"🔌 尝试连接: {port.device} ({port.description})")
+                print(f"🔌 Attempting connection: {port.device} ({port.description})")
                 self.serial_port = serial.Serial(port.device, baudrate, timeout=1)
-                print(f"✅ 成功连接到: {port.device}")
-                time.sleep(2)  # 等待Arduino重启
+                print(f"✅ Successfully connected to: {port.device}")
+                time.sleep(2)  # Wait for Arduino restart
                 return True
             except Exception as e:
-                print(f"   ❌ 连接失败: {e}")
+                print(f"   ❌ Connection failed: {e}")
                 continue
 
-        print("❌ 所有端口都无法连接")
+        print("❌ All ports failed to connect")
         return False
     
     def process_joystick_data(self, data):
-        """处理摇杆数据"""
+        """Process joystick data"""
         data = data.strip()
-        
-        # 解析带时间戳的数据
+
+        # Parse timestamped data
         if " > " in data:
             _, actual_data = data.split(" > ", 1)
             data = actual_data.strip()
-        
-        # 忽略系统信息
-        ignore_patterns = ["校准", "测试程序", "开始检测", "=", "正在", "完成"]
+
+        # Ignore system information
+        ignore_patterns = ["Calibrating", "JoystickShield", "Starting", "=", "complete", "Complete"]
         if any(pattern in data for pattern in ignore_patterns):
             return
-        
-        # 处理位置数据
-        if "摇杆位置" in data:
+
+        # Handle position data
+        if "Joystick Position" in data or ("X:" in data and "Y:" in data):
             self.handle_position_data(data)
             return
-            
-        print(f"📡 接收: {data}")
 
-        # 处理按钮按下事件（支持长按）
-        if "按下" in data:
-            button_name = data.replace("按下", "").strip()
-            self.handle_button_press(button_name)
+        print(f"📡 Received: {data}")
+
+        # Handle joystick center events
+        if "Joystick NotCenter" in data:
+            # Don't release keys for NotCenter, let timeout handle it
             return
 
-        # 处理按钮释放事件
-        if "释放" in data:
-            button_name = data.replace("释放", "").strip()
-            self.handle_button_release(button_name)
-            return
-
-        # 处理摇杆回中事件
-        if "摇杆偏离中心" in data or "摇杆回中" in data:
+        if "Joystick Center" in data:
+            # Joystick returned to center - immediately release all direction keys
             self.release_all_direction_keys()
+            print(f"🎯 Joystick returned to center - releasing all WASD keys")
             return
 
-        # 检查摇杆方向映射
+        # If we haven't received any joystick direction data for a while, release direction keys
+        # This handles the case where Arduino stops sending direction data when joystick is centered
+        current_time = time.time()
+        if self.last_direction_time:
+            oldest_direction_time = min(self.last_direction_time.values())
+            if current_time - oldest_direction_time > self.direction_timeout:
+                self.release_all_direction_keys()
+                self.last_direction_time.clear()
+
+        # Check key mapping (priority processing)
         if data in self.key_mapping:
             keys = self.key_mapping[data]
             if keys:
-                # 摇杆方向使用持续按键（长按）
-                if "摇杆：" in data:
-                    self.press_keys_continuous(keys)  # 持续按住方向键
-                    print(f"🎮 摇杆方向: {data} -> 持续按住 {'+'.join(keys) if isinstance(keys, list) else keys}")
+                # Joystick directions use continuous keys (hold)
+                if "Joystick " in data and data != "Joystick Button Clicked":
+                    self.press_keys_continuous(keys)  # Hold direction keys
+                    # Update direction key timestamps
+                    current_time = time.time()
+                    if isinstance(keys, list):
+                        for key in keys:
+                            self.last_direction_time[key] = current_time
+                    else:
+                        self.last_direction_time[keys] = current_time
+                    print(f"🎮 Joystick direction: {data} -> Hold {'+'.join(keys) if isinstance(keys, list) else keys}")
+                elif "Clicked" in data:
+                    # Button press event: support long press functionality, don't execute short press immediately
+                    button_name = data.replace(" Clicked", "").strip()
+                    self.handle_button_press(button_name)
+                    # No longer execute short press immediately, wait to determine short/long press
                 else:
-                    self.press_keys_continuous(keys)  # 其他事件
+                    self.press_keys_continuous(keys)  # Other events
+            return
+
+        # Handle button release events (not used since Arduino doesn't send release events)
+        if "Released" in data:
+            button_name = data.replace(" Released", "").strip()
+            self.handle_button_release(button_name)
+            return
     
     def handle_position_data(self, data):
-        """处理位置数据"""
+        """Handle position data"""
         try:
             if "X:" in data and "Y:" in data:
                 x_start = data.find("X:") + 2
                 comma_pos = data.find(",", x_start)
                 y_start = data.find("Y:") + 2
-                
+
                 if comma_pos == -1:
                     return
-                
+
                 x_str = data[x_start:comma_pos].strip()
                 y_str = data[y_start:].strip()
-                
+
                 x_pos = int(x_str)
                 y_pos = int(y_str)
-                
-                # 死区检测
-                dead_zone = 10
+
+                # Dead zone detection - increased for better center detection
+                dead_zone = 15
                 if abs(x_pos) <= dead_zone and abs(y_pos) <= dead_zone:
-                    # 释放所有方向键
-                    direction_keys = ["w", "a", "s", "d"]
-                    for key in direction_keys:
-                        if self.key_states[key]:
-                            self.release_keys(key)
-                    print(f"🎯 摇杆回中: X={x_pos}, Y={y_pos}")
+                    # Release all direction keys immediately when centered
+                    self.release_all_direction_keys()
+                    print(f"🎯 Joystick centered: X={x_pos}, Y={y_pos}")
                 else:
-                    # 处理方向移动
+                    # Handle directional movement
                     self.handle_movement(x_pos, y_pos, dead_zone)
-                    
+
         except Exception as e:
-            print(f"⚠️  位置数据解析错误: {e}")
+            print(f"⚠️  Position data parsing error: {e}")
     
     def handle_movement(self, x_pos, y_pos, dead_zone):
-        """处理移动"""
-        # 先释放所有方向键
+        """Handle movement"""
+        # First release all direction keys
         direction_keys = ["w", "a", "s", "d"]
         for key in direction_keys:
             if self.key_states[key]:
                 self.release_keys(key)
-        
-        # 确定需要按下的键
+
+        # Determine which keys need to be pressed
         keys_to_press = []
-        
-        if y_pos > dead_zone:  # 向上（Y轴正值表示向上）
+
+        if y_pos > dead_zone:  # Up (positive Y-axis means up)
             keys_to_press.append("w")
-        elif y_pos < -dead_zone:  # 向下（Y轴负值表示向下）
+        elif y_pos < -dead_zone:  # Down (negative Y-axis means down)
             keys_to_press.append("s")
-            
-        if x_pos < -dead_zone:  # 向左
+
+        if x_pos < -dead_zone:  # Left
             keys_to_press.append("a")
-        elif x_pos > dead_zone:  # 向右
+        elif x_pos > dead_zone:  # Right
             keys_to_press.append("d")
-        
-        # 按下相应的键
+
+        # Press corresponding keys
         if keys_to_press:
             self.press_keys_continuous(keys_to_press)
-            print(f"🎮 移动: {'+'.join(keys_to_press)} (X={x_pos}, Y={y_pos})")
+            print(f"🎮 Movement: {'+'.join(keys_to_press)} (X={x_pos}, Y={y_pos})")
     
     def serial_listener(self):
-        """串口监听线程"""
-        print("🎮 开始监听摇杆数据...")
+        """Serial port listening thread"""
+        print("🎮 Starting joystick data monitoring...")
 
         while self.is_running:
             try:
-                # 处理串口数据
+                # Process serial port data
                 if self.serial_port and self.serial_port.is_open and self.serial_port.in_waiting:
                     data = self.serial_port.readline().decode('utf-8', errors='ignore')
                     if data:
                         self.process_joystick_data(data)
 
-                # 检查长按状态
+                # Check long press status
                 self.check_long_press()
 
-                # 检查方向键超时
+                # Check direction key timeout
                 self.check_direction_timeout()
 
+                # Check button timeout
+                self.check_button_timeout()
+
             except Exception as e:
-                print(f"❌ 串口读取错误: {e}")
+                print(f"❌ Serial port read error: {e}")
                 break
 
             time.sleep(0.01)
     
     def start(self):
-        """启动控制器"""
+        """Start controller"""
         print("=" * 60)
-        print("🎮 JoystickController - 最终游戏版本")
+        print("🎮 JoystickController - Final Game Version")
         print("=" * 60)
-        
-        # 显示输入方法
-        method = "Win32 API" if self.use_win32 else "keyboard 库"
-        print(f"🎯 输入方法: {method}")
-        
-        # 检查权限
+
+        # Display input method
+        method = "Win32 API" if self.use_win32 else "keyboard library"
+        print(f"🎯 Input method: {method}")
+
+        # Check permissions
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin()
             if is_admin:
-                print("✅ 以管理员身份运行")
+                print("✅ Running as administrator")
             else:
-                print("⚠️  未以管理员身份运行，可能影响游戏兼容性")
+                print("⚠️  Not running as administrator, may affect game compatibility")
         except:
             pass
-        
-        # 连接串口
+
+        # Connect to serial port
         if not self.connect_serial():
-            print("❌ 无法连接串口，程序退出")
+            print("❌ Unable to connect to serial port, program exiting")
             return
         
-        # 显示按键映射
-        print("\n🎯 摇杆方向映射:")
-        direction_actions = [k for k in self.key_mapping.keys() if "摇杆：" in k]
+        # Display key mappings
+        print("\n🎯 Joystick Direction Mapping:")
+        direction_actions = [k for k in self.key_mapping.keys() if "Joystick " in k and "Button" not in k]
         for action in direction_actions:
             keys = self.key_mapping[action]
             if keys:
@@ -613,8 +660,8 @@ class GameJoystickController:
                     keys_str = keys
                 print(f"  {action} -> {keys_str}")
 
-        print("\n🎯 按钮短按映射:")
-        button_actions = [k for k in self.key_mapping.keys() if "按下" in k]
+        print("\n🎯 Button Short Press Mapping:")
+        button_actions = [k for k in self.key_mapping.keys() if "Clicked" in k]
         for action in button_actions:
             keys = self.key_mapping[action]
             if keys:
@@ -624,55 +671,55 @@ class GameJoystickController:
                     keys_str = keys
                 print(f"  {action} -> {keys_str}")
 
-        print(f"\n🎯 按钮长按映射 (长按 {self.long_press_threshold}s 触发):")
+        print(f"\n🎯 Button Long Press Mapping (hold ≥ {self.long_press_threshold}s):")
         for button_name, long_key in self.long_press_mapping.items():
-            print(f"  {button_name}长按 -> {long_key}")
+            print(f"  {button_name} Long Press -> {long_key}")
 
-        print(f"\n⚠️  重要提示:")
-        print("1. 请确保游戏窗口处于活动状态")
-        print("2. 建议将游戏设置为窗口化模式")
-        print("3. 支持按钮短按和长按功能")
-        print("4. 如果仍无响应，请检查游戏输入设置")
-        print("\n⌨️  按 Ctrl+C 退出")
+        print(f"\n⚠️  Important Notes:")
+        print("1. Please ensure game window is active")
+        print("2. Recommend setting game to windowed mode")
+        print("3. Supports button short press and long press functionality")
+        print("4. If still no response, check game input settings")
+        print("\n⌨️  Press Ctrl+C to exit")
         print("-" * 60)
         
-        # 启动监听线程
+        # Start listening thread
         self.is_running = True
         listener_thread = threading.Thread(target=self.serial_listener)
         listener_thread.daemon = True
         listener_thread.start()
-        
+
         try:
             while True:
                 time.sleep(0.1)
         except KeyboardInterrupt:
-            print("\n\n🛑 正在退出...")
+            print("\n\n🛑 Exiting...")
             self.stop()
-    
+
     def stop(self):
-        """停止控制器"""
+        """Stop controller"""
         self.is_running = False
         self.release_all_keys()
-        
+
         if self.serial_port and self.serial_port.is_open:
             self.serial_port.close()
-            print("✅ 串口已关闭")
-        
-        print("✅ 控制器已停止")
+            print("✅ Serial port closed")
+
+        print("✅ Controller stopped")
 
 def main():
-    print("🔍 检查依赖库...")
-    
+    print("🔍 Checking dependencies...")
+
     if not WIN32_AVAILABLE and not KEYBOARD_AVAILABLE:
-        print("❌ 缺少输入库，请安装:")
+        print("❌ Missing input libraries, please install:")
         print("pip install pywin32 keyboard")
         sys.exit(1)
-    
+
     if WIN32_AVAILABLE:
-        print("✅ Win32 API 可用")
+        print("✅ Win32 API available")
     if KEYBOARD_AVAILABLE:
-        print("✅ keyboard 库可用")
-    
+        print("✅ keyboard library available")
+
     controller = GameJoystickController()
     controller.start()
 
