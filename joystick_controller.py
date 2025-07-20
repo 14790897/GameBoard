@@ -12,6 +12,20 @@ import threading
 import sys
 from collections import defaultdict
 
+# 尝试导入额外的输入库
+try:
+    import pynput.keyboard as pynput_kb
+    PYNPUT_AVAILABLE = True
+except ImportError:
+    PYNPUT_AVAILABLE = False
+
+try:
+    import win32api
+    import win32con
+    WIN32_AVAILABLE = True
+except ImportError:
+    WIN32_AVAILABLE = False
+
 class JoystickController:
     def __init__(self):
         self.serial_port = None
@@ -20,6 +34,25 @@ class JoystickController:
         self.last_position = {"x": 0, "y": 0}  # 记录上一次摇杆位置
         self.position_history = []  # 位置历史记录
         self.max_history = 3  # 保留最近几次位置记录
+
+        # 按键模拟方法选择
+        self.input_method = "keyboard"  # 默认使用 keyboard 库
+        self.pynput_controller = None
+
+        # 初始化 pynput 控制器（如果可用）
+        if PYNPUT_AVAILABLE:
+            try:
+                self.pynput_controller = pynput_kb.Controller()
+                print("✅ pynput 库可用，可作为备用输入方法")
+            except Exception as e:
+                print(f"⚠️  pynput 初始化失败: {e}")
+
+        # Windows 虚拟键码映射
+        self.vk_codes = {
+            'w': 0x57, 'a': 0x41, 's': 0x53, 'd': 0x44,
+            'space': 0x20, 'e': 0x45, 'f': 0x46,
+            'up': 0x26, 'down': 0x28, 'left': 0x25, 'right': 0x27
+        }
         self.button_states = defaultdict(bool)  # 记录按钮状态，避免重复触发
         self.last_button_time = defaultdict(float)  # 记录按钮最后触发时间
         self.button_debounce_time = 0.1  # 按钮防抖时间（100ms）
@@ -31,22 +64,22 @@ class JoystickController:
             "摇杆：下": "s",      # 对应下按钮
             "摇杆：左": "a",      # 对应左按钮
             "摇杆：右": "d",      # 对应右按钮
-            "摇杆：左上": ["i", "h"],    # 上+左
-            "摇杆：右上": ["i", "l"],    # 上+右
-            "摇杆：左下": ["j", "h"],    # 下+左
-            "摇杆：右下": ["j", "l"],    # 下+右
-            
+            "摇杆：左上": ["a", "w"],    # 上+左
+            "摇杆：右上": ["d", "w"],    # 上+右
+            "摇杆：左下": ["a", "s"],    # 下+左
+            "摇杆：右下": ["d", "s"],    # 下+右
+
             # 按钮 -> 键盘按键
             "摇杆按键按下": "space",
-            "上按钮按下": "i",      # 修复：改为方向键上
-            "下按钮按下": "j",    # 修复：改为方向键下
-            "左按钮按下": "h",    # 修复：改为方向键左
-            "右按钮按下": "l",   # 保持方向键右
+            "上按钮按下": "o",      
+            "下按钮按下": "j",    
+            "左按钮按下": "i",   
+            "右按钮按下": "k",  
             "E 按钮按下": "e",
             "F 按钮按下": "f",
             
             # 特殊功能
-            "摇杆偏离中心": None,  # 不映射按键
+            "摇杆偏离中心": None,  
         }
         
     def find_arduino_port(self):
@@ -115,47 +148,191 @@ class JoystickController:
                         print(f"❌ 备用串口连接失败: {e2}")
             return False
     
+    def _press_key_keyboard(self, key):
+        """使用 keyboard 库按下按键"""
+        try:
+            keyboard.press(key)
+            return True
+        except Exception as e:
+            print(f"❌ keyboard 库按键失败 {key}: {e}")
+            return False
+
+    def _release_key_keyboard(self, key):
+        """使用 keyboard 库释放按键"""
+        try:
+            keyboard.release(key)
+            return True
+        except Exception as e:
+            print(f"❌ keyboard 库释放失败 {key}: {e}")
+            return False
+
+    def _press_key_pynput(self, key):
+        """使用 pynput 库按下按键"""
+        if not self.pynput_controller:
+            return False
+        try:
+            if key in ['up', 'down', 'left', 'right']:
+                # 方向键需要特殊处理
+                key_map = {
+                    'up': pynput_kb.Key.up,
+                    'down': pynput_kb.Key.down,
+                    'left': pynput_kb.Key.left,
+                    'right': pynput_kb.Key.right
+                }
+                self.pynput_controller.press(key_map[key])
+            elif key == 'space':
+                self.pynput_controller.press(pynput_kb.Key.space)
+            else:
+                self.pynput_controller.press(key)
+            return True
+        except Exception as e:
+            print(f"❌ pynput 库按键失败 {key}: {e}")
+            return False
+
+    def _release_key_pynput(self, key):
+        """使用 pynput 库释放按键"""
+        if not self.pynput_controller:
+            return False
+        try:
+            if key in ['up', 'down', 'left', 'right']:
+                key_map = {
+                    'up': pynput_kb.Key.up,
+                    'down': pynput_kb.Key.down,
+                    'left': pynput_kb.Key.left,
+                    'right': pynput_kb.Key.right
+                }
+                self.pynput_controller.release(key_map[key])
+            elif key == 'space':
+                self.pynput_controller.release(pynput_kb.Key.space)
+            else:
+                self.pynput_controller.release(key)
+            return True
+        except Exception as e:
+            print(f"❌ pynput 库释放失败 {key}: {e}")
+            return False
+
+    def _press_key_win32(self, key):
+        """使用 Win32 API 按下按键"""
+        if not WIN32_AVAILABLE or key not in self.vk_codes:
+            return False
+        try:
+            vk_code = self.vk_codes[key]
+            win32api.keybd_event(vk_code, 0, 0, 0)  # 按下
+            return True
+        except Exception as e:
+            print(f"❌ Win32 API 按键失败 {key}: {e}")
+            return False
+
+    def _release_key_win32(self, key):
+        """使用 Win32 API 释放按键"""
+        if not WIN32_AVAILABLE or key not in self.vk_codes:
+            return False
+        try:
+            vk_code = self.vk_codes[key]
+            win32api.keybd_event(vk_code, 0, win32con.KEYEVENTF_KEYUP, 0)  # 释放
+            return True
+        except Exception as e:
+            print(f"❌ Win32 API 释放失败 {key}: {e}")
+            return False
+
     def press_keys_continuous(self, keys):
         """按下按键（针对摇杆方向，持续状态）"""
         if isinstance(keys, str):
             keys = [keys]
-            
+
         for key in keys:
             if not self.key_states[key]:
-                keyboard.press(key)
-                self.key_states[key] = True
-                print(f"🔽 按下: {key}")
-    
+                success = False
+
+                # 尝试多种按键方法
+                if self.input_method == "keyboard":
+                    success = self._press_key_keyboard(key)
+
+                if not success and PYNPUT_AVAILABLE:
+                    print(f"🔄 尝试使用 pynput 按下 {key}")
+                    success = self._press_key_pynput(key)
+
+                if not success and WIN32_AVAILABLE:
+                    print(f"🔄 尝试使用 Win32 API 按下 {key}")
+                    success = self._press_key_win32(key)
+
+                if success:
+                    self.key_states[key] = True
+                    print(f"🔽 按下: {key}")
+                else:
+                    print(f"❌ 所有方法都无法按下按键: {key}")
+
     def press_keys(self, keys):
         """按下按键（针对按钮事件，执行按下-释放）"""
         if isinstance(keys, str):
             keys = [keys]
-            
+
         for key in keys:
             # 对于按钮事件，执行完整的按下-释放动作
-            keyboard.press(key)
-            print(f"🔽 按下: {key}")
-            time.sleep(0.05)  # 短暂延迟确保按键被识别
-            keyboard.release(key)
-            print(f"🔼 释放: {key}")
-    
+            success_press = False
+            success_release = False
+
+            # 尝试按下
+            if self.input_method == "keyboard":
+                success_press = self._press_key_keyboard(key)
+
+            if not success_press and PYNPUT_AVAILABLE:
+                success_press = self._press_key_pynput(key)
+
+            if not success_press and WIN32_AVAILABLE:
+                success_press = self._press_key_win32(key)
+
+            if success_press:
+                print(f"🔽 按下: {key}")
+                time.sleep(0.05)  # 短暂延迟确保按键被识别
+
+                # 尝试释放
+                if self.input_method == "keyboard":
+                    success_release = self._release_key_keyboard(key)
+
+                if not success_release and PYNPUT_AVAILABLE:
+                    success_release = self._release_key_pynput(key)
+
+                if not success_release and WIN32_AVAILABLE:
+                    success_release = self._release_key_win32(key)
+
+                if success_release:
+                    print(f"🔼 释放: {key}")
+                else:
+                    print(f"❌ 无法释放按键: {key}")
+            else:
+                print(f"❌ 无法按下按键: {key}")
+
     def release_keys(self, keys):
         """释放按键"""
         if isinstance(keys, str):
             keys = [keys]
-            
+
         for key in keys:
             if self.key_states[key]:
-                keyboard.release(key)
-                self.key_states[key] = False
-                print(f"🔼 释放: {key}")
-    
+                success = False
+
+                # 尝试多种释放方法
+                if self.input_method == "keyboard":
+                    success = self._release_key_keyboard(key)
+
+                if not success and PYNPUT_AVAILABLE:
+                    success = self._release_key_pynput(key)
+
+                if not success and WIN32_AVAILABLE:
+                    success = self._release_key_win32(key)
+
+                if success:
+                    self.key_states[key] = False
+                    print(f"🔼 释放: {key}")
+                else:
+                    print(f"❌ 无法释放按键: {key}")
+
     def release_all_keys(self):
         """释放所有按键"""
         for key, pressed in self.key_states.items():
             if pressed:
-                keyboard.release(key)
-                self.key_states[key] = False
+                self.release_keys(key)
     
     def process_joystick_data(self, data):
         """处理摇杆数据"""
@@ -172,9 +349,9 @@ class JoystickController:
             return
         
         # 处理位置数据 - 检测摇杆回中
-        if "摇杆位置" in data:
-            self.handle_position_data(data)
-            return
+        # if "摇杆位置" in data:
+        #     self.handle_position_data(data)
+        #     return
             
         print(f"📡 接收: {data}")
         
@@ -192,11 +369,11 @@ class JoystickController:
             else:
                 print(f"🚫 按钮防抖: {data} (忽略重复触发)")
         else:
-            # 摇杆方向事件 - 持续按压处理
+            # 摇杆方向事件 - 每次都触发一次按下-释放
             if data in self.key_mapping:
                 keys = self.key_mapping[data]
                 if keys:
-                    self.press_keys_continuous(keys)  # 摇杆方向用持续按压
+                    self.press_keys(keys)  # 每次都按下-释放
     
     def should_process_button_event(self, button_data):
         """判断是否应该处理按钮事件（防抖）"""
@@ -241,24 +418,25 @@ class JoystickController:
                     print(f"⚠️  位置数值超出合理范围: X={x_pos}, Y={y_pos}")
                     return
 
+                # 检查位置是否有变化，避免重复处理相同位置
+                if (self.last_position["x"] == x_pos and 
+                    self.last_position["y"] == y_pos):
+                    return  # 位置没有变化，直接返回
+
                 # 更新位置历史
                 self.update_position_history(x_pos, y_pos)
 
-                # 先检测摇杆是否在死区内 (死区范围 ±20)
-                if abs(x_pos) <= 20 and abs(y_pos) <= 20:
+                # 先检测摇杆是否在死区内 (死区范围调整为适合-100~100的范围)
+                dead_zone_threshold = 15  # 与handle_movement_from_position保持一致
+                if abs(x_pos) <= dead_zone_threshold and abs(y_pos) <= dead_zone_threshold:
                     # 释放所有方向键
-                    direction_keys = ["i", "h", "j", "l"]  # 更新为新的方向键
+                    direction_keys = ["w", "a", "s", "d"]  # 使用正确的摇杆方向键
                     for key in direction_keys:
                         if self.key_states[key]:
                             self.release_keys(key)
                     print(f"🎯 摇杆回中: X={x_pos}, Y={y_pos}")
                 else:
-                    # 检查是否正在回中过程中
-                    if self.is_returning_to_center(x_pos, y_pos):
-                        print(f"🔄 摇杆正在回中，跳过移动触发: X={x_pos}, Y={y_pos}")
-                        return
-
-                    # 只有不在死区且不在回中过程中时才触发移动
+                    # 直接处理移动，移除复杂的回中检测逻辑
                     self.handle_movement_from_position(x_pos, y_pos)
                     print(f"📍 摇杆位置: X={x_pos}, Y={y_pos}")
 
@@ -280,45 +458,18 @@ class JoystickController:
         if len(self.position_history) > self.max_history:
             self.position_history.pop(0)
     
-    def is_returning_to_center(self, x_pos, y_pos):
-        """判断摇杆是否正在回中"""
-        if len(self.position_history) < 2:
-            return False
-        
-        # 计算当前位置到中心的距离
-        current_distance = abs(x_pos) + abs(y_pos)
-        
-        # 计算前一个位置到中心的距离
-        prev_pos = self.position_history[-2]
-        prev_distance = abs(prev_pos["x"]) + abs(prev_pos["y"])
-        
-        # 如果距离在减小，说明正在向中心移动
-        is_approaching_center = current_distance < prev_distance
-        
-        # 如果前一个位置不在死区内，而且正在向中心靠近，认为是回中过程
-        dead_zone = 20
-        prev_in_deadzone = abs(prev_pos["x"]) <= dead_zone and abs(prev_pos["y"]) <= dead_zone
-        
-        # 回中判断条件：
-        # 1. 正在向中心靠近
-        # 2. 前一个位置不在死区内（避免在死区内的小幅震动）
-        # 3. 当前位置距离中心的距离小于前一个位置的80%（明显的回中趋势）
-        return (is_approaching_center and 
-                not prev_in_deadzone and 
-                current_distance < prev_distance * 0.8)
-    
     def handle_movement_from_position(self, x_pos, y_pos):
         """根据摇杆位置触发移动"""
-        # 死区范围 - 增加死区以减少抖动
-        dead_zone = 20  # 从10增加到20
+        # 死区范围 - 根据摇杆坐标范围(-100~100)调整死区
+        dead_zone = 15  # 适合-100~100范围的死区
         
-        # 滞后区域 - 避免在阈值边界处抖动
-        hysteresis = 5  # 滞后范围
+        # 添加调试信息
+        print(f"🔍 调试: 摇杆位置 X={x_pos}, Y={y_pos}, 死区={dead_zone}")
         
         # 双重检查：确保不在死区内
         if abs(x_pos) <= dead_zone and abs(y_pos) <= dead_zone:
             # 如果在死区内，释放所有方向键
-            direction_keys = ["i", "h", "j", "l"]  # 更新为新的方向键
+            direction_keys = ["w", "a", "s", "d"]  # 更新为新的方向键
             keys_to_release = [key for key in direction_keys if self.key_states[key]]
             
             if keys_to_release:
@@ -327,43 +478,31 @@ class JoystickController:
                 print(f"🎯 摇杆在死区内，释放所有方向键: X={x_pos}, Y={y_pos}")
             return
         
-        # 根据位置确定需要按下的键，使用滞后处理
+        # 根据位置确定需要按下的键（简化逻辑）
         keys_to_press = []
         
-        # 垂直方向 (Y轴) - 添加滞后处理
-        current_y_pressed = self.key_states["i"] or self.key_states["j"]  # 上i 下j
-        if not current_y_pressed:
-            # 没有Y轴按键被按下，使用标准阈值
-            if y_pos < -(dead_zone):  # 向上
-                keys_to_press.append("i")
-            elif y_pos > dead_zone:  # 向下
-                keys_to_press.append("j")
-        else:
-            # 有Y轴按键被按下，使用滞后阈值避免抖动
-            if y_pos < -(dead_zone - hysteresis):  # 向上（滞后）
-                keys_to_press.append("i")
-            elif y_pos > (dead_zone - hysteresis):  # 向下（滞后）
-                keys_to_press.append("j")
-            
-        # 水平方向 (X轴) - 添加滞后处理
-        current_x_pressed = self.key_states["h"] or self.key_states["l"]  # 左h 右l
-        if not current_x_pressed:
-            # 没有X轴按键被按下，使用标准阈值
-            if x_pos < -(dead_zone):  # 向左
-                keys_to_press.append("h")
-            elif x_pos > dead_zone:  # 向右
-                keys_to_press.append("l")
-        else:
-            # 有X轴按键被按下，使用滞后阈值避免抖动
-            if x_pos < -(dead_zone - hysteresis):  # 向左（滞后）
-                keys_to_press.append("h")
-            elif x_pos > (dead_zone - hysteresis):  # 向右（滞后）
-                keys_to_press.append("l")
-        
+        # 垂直方向 (Y轴)
+        if y_pos < -dead_zone:  # 向上
+            keys_to_press.append("w")
+            print(f"🔍 Y轴: 向上触发 (y_pos={y_pos} < -{dead_zone})")
+        elif y_pos > dead_zone:  # 向下
+            keys_to_press.append("s")
+            print(f"🔍 Y轴: 向下触发 (y_pos={y_pos} > {dead_zone})")
+
+        # 水平方向 (X轴)
+        if x_pos < -dead_zone:  # 向左
+            keys_to_press.append("a")
+            print(f"🔍 X轴: 向左触发 (x_pos={x_pos} < -{dead_zone})")
+        elif x_pos > dead_zone:  # 向右
+            keys_to_press.append("d")
+            print(f"🔍 X轴: 向右触发 (x_pos={x_pos} > {dead_zone})")
+
         # 智能按键管理：只改变有差异的按键状态
-        direction_keys = ["i", "h", "j", "l"]  # 更新为新的方向键：上i 左h 下j 右l
+        direction_keys = ["w", "a", "s", "d"]  # 更新为新的方向键：上w 左a 下s 右d
         keys_to_press_set = set(keys_to_press)
         currently_pressed_set = set(key for key in direction_keys if self.key_states[key])
+        
+        print(f"🔍 按键状态: 应按下={keys_to_press}, 当前按下={list(currently_pressed_set)}")
         
         # 需要释放的键（当前按下但不应该按下的）
         keys_to_release = currently_pressed_set - keys_to_press_set
@@ -379,21 +518,21 @@ class JoystickController:
         if keys_to_release or keys_to_press_new:
             if keys_to_press:
                 direction_str = ""
-                if "i" in keys_to_press and "h" in keys_to_press:
+                if "w" in keys_to_press and "a" in keys_to_press:
                     direction_str = "左上"
-                elif "i" in keys_to_press and "l" in keys_to_press:
+                elif "w" in keys_to_press and "d" in keys_to_press:
                     direction_str = "右上"
-                elif "j" in keys_to_press and "h" in keys_to_press:
+                elif "s" in keys_to_press and "a" in keys_to_press:
                     direction_str = "左下"
-                elif "j" in keys_to_press and "l" in keys_to_press:
+                elif "s" in keys_to_press and "d" in keys_to_press:
                     direction_str = "右下"
-                elif "i" in keys_to_press:
+                elif "w" in keys_to_press:
                     direction_str = "上"
-                elif "j" in keys_to_press:
+                elif "s" in keys_to_press:
                     direction_str = "下"
-                elif "h" in keys_to_press:
+                elif "a" in keys_to_press:
                     direction_str = "左"
-                elif "l" in keys_to_press:
+                elif "d" in keys_to_press:
                     direction_str = "右"
                 
                 print(f"🎮 摇杆移动: {direction_str} ({'+'.join(keys_to_press)})")
@@ -432,16 +571,59 @@ class JoystickController:
         except Exception as e:
             print(f"❌ 重连失败: {e}")
     
+    def select_input_method(self):
+        """选择输入方法"""
+        print("\n🎯 可用的按键输入方法:")
+        methods = ["keyboard"]
+
+        if PYNPUT_AVAILABLE:
+            methods.append("pynput")
+        if WIN32_AVAILABLE:
+            methods.append("win32")
+
+        for i, method in enumerate(methods, 1):
+            status = ""
+            if method == "keyboard":
+                status = " (默认)"
+            elif method == "pynput":
+                status = " (推荐用于游戏)"
+            elif method == "win32":
+                status = " (底层 API，兼容性最好)"
+            print(f"  {i}. {method}{status}")
+
+        try:
+            choice = input(f"\n请选择输入方法 (1-{len(methods)}, 直接回车使用默认): ").strip()
+            if choice and choice.isdigit():
+                index = int(choice) - 1
+                if 0 <= index < len(methods):
+                    self.input_method = methods[index]
+                    print(f"✅ 已选择输入方法: {self.input_method}")
+                else:
+                    print("⚠️  无效选择，使用默认方法: keyboard")
+            else:
+                print("✅ 使用默认输入方法: keyboard")
+        except Exception:
+            print("⚠️  输入错误，使用默认方法: keyboard")
+
     def start(self):
         """启动控制器"""
         print("=" * 50)
         print("🎮 JoystickShield PC 控制器")
         print("=" * 50)
-        
+
+        # 显示可用的输入库
+        print("\n📚 输入库状态:")
+        print(f"  keyboard: ✅ 可用")
+        print(f"  pynput: {'✅ 可用' if PYNPUT_AVAILABLE else '❌ 不可用'}")
+        print(f"  win32api: {'✅ 可用' if WIN32_AVAILABLE else '❌ 不可用'}")
+
+        # 选择输入方法
+        self.select_input_method()
+
         # 连接串口
         if not self.connect_serial():
             return
-        
+
         # 显示按键映射
         print("\n🎯 按键映射:")
         for action, keys in self.key_mapping.items():
@@ -451,8 +633,9 @@ class JoystickController:
                 else:
                     keys_str = keys
                 print(f"  {action} -> {keys_str}")
-        
-        print("\n⌨️  按 Ctrl+C 退出")
+
+        print(f"\n🎮 当前输入方法: {self.input_method}")
+        print("⌨️  按 Ctrl+C 退出")
         print("-" * 50)
         
         # 启动监听线程
@@ -504,7 +687,7 @@ def check_admin_privileges():
         return False
 
 def main():
-    # 检查依赖
+    # 检查基本依赖
     try:
         import importlib.util
 
@@ -517,9 +700,22 @@ def main():
             raise ImportError("keyboard not found")
 
     except ImportError:
-        print("❌ 缺少依赖库，请安装:")
+        print("❌ 缺少基本依赖库，请安装:")
         print("pip install pyserial keyboard")
         sys.exit(1)
+
+    # 检查可选依赖
+    missing_optional = []
+    if not PYNPUT_AVAILABLE:
+        missing_optional.append("pynput")
+    if not WIN32_AVAILABLE:
+        missing_optional.append("pywin32")
+
+    if missing_optional:
+        print("⚠️  可选依赖库未安装（可提高游戏兼容性）:")
+        print(f"pip install {' '.join(missing_optional)}")
+        print("按 Enter 继续使用基本功能...")
+        input()
 
     # 检查权限（Windows）
     if sys.platform.startswith('win') and not check_admin_privileges():
