@@ -88,6 +88,46 @@ def handle_position_data(self, data):
 摇杆回中时 -> 跳过移动处理，只释放 w  ✅
 ```
 
+## 🔧 修复4: 按钮按键无响应问题 (2024-12)
+
+### 问题现象
+- "上按钮按下"和"左按钮按下"没有触发任何按键
+- "下按钮按下"和"右按钮按下"能正常工作
+- 按键映射配置正确，但部分按钮不响应
+
+### 问题分析
+1. **按键状态管理错误**：原 `press_keys()` 方法使用 `self.key_states[key]` 阻止重复按键，对按钮事件来说是错误逻辑
+2. **按钮与摇杆处理混淆**：按钮应该是瞬时"按下-释放"，摇杆方向应该是持续状态
+3. **状态冲突**：按键状态一旦设为 True，后续相同按键被阻止
+
+### 修复方案
+1. **分离按键处理逻辑**：
+   ```python
+   def press_keys(self, keys):
+       """按钮事件：瞬时按下-释放"""
+       for key in keys:
+           keyboard.press(key)
+           time.sleep(0.05)
+           keyboard.release(key)
+   
+   def press_keys_continuous(self, keys):
+       """摇杆方向：持续状态"""
+       for key in keys:
+           if not self.key_states[key]:
+               keyboard.press(key)
+               self.key_states[key] = True
+   ```
+
+2. **调整事件处理分发**：
+   - 按钮事件 (`"按钮按下"`) → `press_keys()`
+   - 摇杆事件 (`"摇杆：上"`) → `press_keys_continuous()`
+
+### 修复效果
+- ✅ 所有按钮均能正确响应
+- ✅ 按键动作完整（按下-释放）
+- ✅ 防抖机制正常工作
+- ✅ 摇杆方向保持持续状态
+
 ## 📁 相关文件
 - `joystick_controller.py` - 主控制器（已修复）
 - `advanced_controller.py` - 增强控制器（同样已修复）
