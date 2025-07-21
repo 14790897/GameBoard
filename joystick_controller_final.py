@@ -282,9 +282,50 @@ class GameJoystickController:
         if direction_name in self.key_mapping:
             keys = self.key_mapping[direction_name]
             if keys:
-                self.press_keys_continuous(keys)
-                keys_str = '+'.join(keys) if isinstance(keys, list) else keys
-                print(f"🕹️ Joystick direction pressed: {direction_name} -> {keys_str}")
+                # Convert single key to list for consistent processing
+                if isinstance(keys, str):
+                    keys = [keys]
+
+                # Get currently pressed direction keys
+                currently_pressed = [key for key in self.DIRECTION_KEYS if self.key_states.get(key, False)]
+
+                # Debug information
+                print(f"🔍 Debug - Direction: {direction_name}")
+                print(f"🔍 Debug - Required keys: {keys}")
+                print(f"🔍 Debug - Currently pressed: {currently_pressed}")
+                print(f"🔍 Debug - Key states: {dict(self.key_states)}")
+
+                # Only change keys if the direction actually changed
+                if set(keys) != set(currently_pressed):
+                    print(f"🔄 Keys need to change from {currently_pressed} to {keys}")
+
+                    # Release keys that are no longer needed
+                    keys_to_release = []
+                    for key in currently_pressed:
+                        if key not in keys:
+                            keys_to_release.append(key)
+                            self.release_single_key(key)
+
+                    # Press new keys that weren't pressed before
+                    keys_to_press = []
+                    for key in keys:
+                        if key not in currently_pressed:
+                            keys_to_press.append(key)
+                            self.press_single_key_continuous(key)
+
+                    keys_str = '+'.join(keys)
+                    if keys_to_release:
+                        print(f"� Released keys: {'+'.join(keys_to_release)}")
+                    if keys_to_press:
+                        print(f"🔽 Pressed keys: {'+'.join(keys_to_press)}")
+                    print(f"�🕹️ Joystick direction changed: {direction_name} -> {keys_str}")
+                else:
+                    print(f"✅ Keys already correct for {direction_name}")
+
+                # Update direction key timestamps for timeout mechanism
+                current_time = time.time()
+                for key in keys:
+                    self.last_direction_time[key] = current_time
 
     def handle_joystick_direction_release(self, direction_name):
         """Handle joystick direction release event"""
@@ -440,13 +481,6 @@ class GameJoystickController:
                 if "Joystick " in data and data != "Joystick Button Clicked":
                     # Handle joystick direction press (immediate response)
                     self.handle_joystick_direction_press(data)
-                    # Update direction key timestamps for timeout mechanism
-                    current_time = time.time()
-                    if isinstance(keys, list):
-                        for key in keys:
-                            self.last_direction_time[key] = current_time
-                    else:
-                        self.last_direction_time[keys] = current_time
                 elif "Clicked" in data:
                     # Button press event
                     button_name = data.replace(" Clicked", "").strip()
