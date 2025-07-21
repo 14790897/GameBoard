@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Build Windows executable
+      run: |
+        pyinstaller --onefile --windowed --name JoystickController joystick_controller_final.py
+    
+    - name: Install PlatformIO
+      run: |
+        pip install --upgrade platformio
+    
+    - name: Build Arduino firmware
+      run: pio run
+    
+    - name: Prepare release files
+      run: |
+        mkdir release-files
+        copy dist\JoystickController.exe release-files\
+        copy .pio\build\uno\firmware.hex release-files\
+        copy README.md release-files\
+        copy requirements.txt release-files\
+        copy platformio.ini release-files\
+        copy src\main.cpp release-files\
+        copy *.bat release-files\ 2>nul || echo "No .bat files found"
+        copy JoystickController_Release\* release-files\ 2>nul || echo "No release files found"
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: GameBoard ${{ github.ref }}
+        body: |
+          ## 🎮 GameBoard Release ${{ github.ref }}
+          
+          ### 📦 包含文件
+          - `JoystickController.exe` - Windows 可执行文件
+          - `firmware.hex` - Arduino 固件文件
+          - `main.cpp` - Arduino 源代码
+          - `README.md` - 使用说明
+          - 其他配置和脚本文件
+          
+          ### 🚀 快速开始
+          1. 下载并解压发布包
+          2. 将 `firmware.hex` 上传到 Arduino 开发板
+          3. 运行 `JoystickController.exe`
+          
+          ### 📋 系统要求
+          - Windows 10/11
+          - Arduino Uno/Nano + JoystickShield
+          - USB 连接线
+          
+          ### 🔧 硬件连接
+          请参考 README.md 中的硬件连接说明
+        draft: false
+        prerelease: false
+    
+    - name: Upload Release Assets
+      run: |
+        $files = Get-ChildItem -Path "release-files" -File
+        foreach ($file in $files) {
+          $asset_name = $file.Name
+          $asset_path = $file.FullName
+          
+          # Upload each file as a release asset
+          $headers = @{
+            "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
+            "Content-Type" = "application/octet-stream"
+          }
+          
+          $upload_url = "${{ steps.create_release.outputs.upload_url }}" -replace '\{\?name,label\}', "?name=$asset_name"
+          
+          try {
+            Invoke-RestMethod -Uri $upload_url -Method Post -Headers $headers -InFile $asset_path
+            Write-Host "Uploaded: $asset_name"
+          } catch {
+            Write-Host "Failed to upload: $asset_name - $($_.Exception.Message)"
+          }
+        }
+      shell: powershell

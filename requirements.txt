@@ -1,0 +1,21 @@
+# JoystickController - Python Dependencies
+# Core dependencies for the joystick controller application
+
+# Build tool for creating executable
+pyinstaller==6.14.2
+
+# Serial communication (required)
+pyserial>=3.5
+
+# Windows API support (required for Windows)
+pywin32>=311
+
+# Keyboard input simulation (optional but recommended)
+keyboard>=0.13.5
+
+# Standard library modules (included with Python):
+# - time
+# - threading
+# - sys
+# - ctypes
+# - collections
