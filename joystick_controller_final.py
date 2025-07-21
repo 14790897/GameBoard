@@ -32,20 +32,17 @@ except ImportError:
     KEYBOARD_AVAILABLE = False
 
 class GameJoystickController:
+    # Direction keys constant
+    DIRECTION_KEYS = ["w", "a", "s", "d"]
+
     def __init__(self):
         self.serial_port = None
         self.is_running = False
         self.key_states = defaultdict(bool)
-        self.last_position = {"x": 0, "y": 0}
-
-        # Button functionality - only short press
-        # No long press functionality needed
 
         # Direction key auto-release functionality
         self.last_direction_time = {}  # Record last direction key trigger time
         self.direction_timeout = 0.15  # Direction key timeout (seconds) - quick release when joystick stops
-
-        # Joystick direction immediate response - no delay needed
 
         # Initialize input method manager
         self.input_method_manager = InputMethodManager()
@@ -64,17 +61,17 @@ class GameJoystickController:
         
         # Key mapping configuration
         self.key_mapping = {
-            # Joystick directions -> Keyboard keys (consistent with button mapping)
-            "Joystick Up": "w",           # Corresponds to up button
-            "Joystick Down": "s",         # Corresponds to down button
-            "Joystick Left": "a",         # Corresponds to left button
-            "Joystick Right": "d",        # Corresponds to right button
-            "Joystick LeftUp": ["a", "w"],     # Up + Left
-            "Joystick RightUp": ["d", "w"],    # Up + Right
-            "Joystick LeftDown": ["a", "s"],   # Down + Left
-            "Joystick RightDown": ["d", "s"],  # Down + Right
+            # Joystick directions
+            "Joystick Up": "w",
+            "Joystick Down": "s",
+            "Joystick Left": "a",
+            "Joystick Right": "d",
+            "Joystick LeftUp": ["a", "w"],
+            "Joystick RightUp": ["d", "w"],
+            "Joystick LeftDown": ["a", "s"],
+            "Joystick RightDown": ["d", "s"],
 
-            # Buttons -> Keyboard keys (short press)
+            # Button clicks
             "Joystick Button Clicked": "f",
             "Up Button Clicked": "o",
             "Down Button Clicked": "j",
@@ -84,12 +81,8 @@ class GameJoystickController:
             "F Button Clicked": "v",
 
             # Special functions
-            "Joystick NotCenter": None,  # No key mapping
+            "Joystick NotCenter": None,
         }
-
-        # No long press mapping - only short press functionality
-
-        # Joystick direction uses immediate response - no delay
     
     def get_foreground_window_title(self):
         """Get current active window title"""
@@ -115,6 +108,10 @@ class GameJoystickController:
             print("Please switch to game window!")
             return False
         return True
+
+    def _get_input_method_name(self):
+        """Get current input method name"""
+        return "Win32" if self.use_win32 else "keyboard"
     
     def press_key_win32(self, key):
         """Press key using Win32 API"""
@@ -303,43 +300,24 @@ class GameJoystickController:
     def press_single_key_continuous(self, key):
         """Press single key (continuous state)"""
         if not self.key_states[key]:
-            success = False
-            method = ""
-
-            if self.use_win32:
-                success = self.press_key_win32(key)
-                method = "Win32"
-            else:
-                success = self.press_key_keyboard(key)
-                method = "keyboard"
-
+            success = self.press_key_win32(key) if self.use_win32 else self.press_key_keyboard(key)
             if success:
                 self.key_states[key] = True
-                print(f"🔽 Press: {key} ({method})")
+                print(f"🔽 Press: {key} ({self._get_input_method_name()})")
 
     def release_single_key(self, key):
         """Release single key"""
         if self.key_states[key]:
-            success = False
-            method = ""
-
-            if self.use_win32:
-                success = self.release_key_win32(key)
-                method = "Win32"
-            else:
-                success = self.release_key_keyboard(key)
-                method = "keyboard"
-
+            success = self.release_key_win32(key) if self.use_win32 else self.release_key_keyboard(key)
             if success:
                 self.key_states[key] = False
-                print(f"🔼 Release: {key} ({method})")
+                print(f"🔼 Release: {key} ({self._get_input_method_name()})")
 
     def release_all_direction_keys(self):
         """Release all direction keys"""
-        direction_keys = ["w", "a", "s", "d"]
         released_keys = []
 
-        for key in direction_keys:
+        for key in self.DIRECTION_KEYS:
             if self.key_states[key]:
                 self.release_single_key(key)
                 released_keys.append(key)
@@ -350,10 +328,9 @@ class GameJoystickController:
     def check_direction_timeout(self):
         """Check if direction keys have timed out, release if so"""
         current_time = time.time()
-        direction_keys = ["w", "a", "s", "d"]  # Include all possible direction keys that might be pressed
         keys_to_release = []
 
-        for key in direction_keys:
+        for key in self.DIRECTION_KEYS:
             if key in self.last_direction_time:
                 time_since_last = current_time - self.last_direction_time[key]
                 if time_since_last > self.direction_timeout:
@@ -371,8 +348,6 @@ class GameJoystickController:
             # Clear record
             if key in self.last_direction_time:
                 del self.last_direction_time[key]
-
-    # Button timeout functionality removed - no long press needed
     
     def connect_serial(self, baudrate=115200):
         """Connect to serial port - auto-find available port"""
@@ -433,10 +408,7 @@ class GameJoystickController:
         if any(pattern in data for pattern in ignore_patterns):
             return
 
-        # Handle position data
-        # if "Joystick Position" in data or ("X:" in data and "Y:" in data):
-        #     self.handle_position_data(data)
-        #     return
+
 
         print(f"📡 Received: {data}")
 
@@ -476,15 +448,12 @@ class GameJoystickController:
                     else:
                         self.last_direction_time[keys] = current_time
                 elif "Clicked" in data:
-                    # Button press event: support long press functionality, don't execute short press immediately
+                    # Button press event
                     button_name = data.replace(" Clicked", "").strip()
                     self.handle_button_press(button_name)
-                    # No longer execute short press immediately, wait to determine short/long press
                 else:
-                    self.press_keys_continuous(keys)  # Other events
+                    self.press_keys_continuous(keys)
             return
-
-        # Button release events not needed - immediate short press only
 
     def handle_position_data(self, data):
         """Handle position data"""
@@ -525,8 +494,7 @@ class GameJoystickController:
             keys_to_press.append("d")
 
         # Get currently pressed direction keys
-        direction_keys = ["w", "a", "s", "d"]
-        currently_pressed = [key for key in direction_keys if self.key_states.get(key, False)]
+        currently_pressed = [key for key in self.DIRECTION_KEYS if self.key_states.get(key, False)]
 
         # Only change keys if the direction actually changed
         if set(keys_to_press) != set(currently_pressed):
@@ -559,8 +527,6 @@ class GameJoystickController:
                 # Check direction key timeout
                 self.check_direction_timeout()
 
-                # Button timeout check removed - no long press functionality
-
             except Exception as e:
                 print(f"❌ Serial port read error: {e}")
                 break
@@ -577,8 +543,8 @@ class GameJoystickController:
         self.switch_to_english_input()
 
         # Display input method
-        method = "Win32 API" if self.use_win32 else "keyboard library"
-        print(f"🎯 Input method: {method}")
+        method_name = "Win32 API" if self.use_win32 else "keyboard library"
+        print(f"🎯 Input method: {method_name}")
 
         # Check permissions
         try:
@@ -617,8 +583,6 @@ class GameJoystickController:
                 else:
                     keys_str = keys
                 print(f"  {action} -> {keys_str}")
-
-        # Long press functionality removed - only short press available
 
         print(f"\n🕹️ Joystick Direction Control:")
         for direction_name, keys in self.key_mapping.items():
