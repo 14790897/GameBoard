@@ -74,7 +74,7 @@ jobs:
       run: pio run
     
     - name: Upload firmware artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: arduino-firmware
         path: .pio/build/uno/firmware.hex
@@ -102,7 +102,7 @@ jobs:
         pyinstaller --onefile --windowed --name JoystickController joystick_controller_final.py
     
     - name: Upload executable artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: windows-executable
         path: dist/JoystickController.exe
@@ -117,13 +117,13 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Download Arduino firmware
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: arduino-firmware
         path: ./artifacts/
-    
+
     - name: Download Windows executable
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: windows-executable
         path: ./artifacts/
