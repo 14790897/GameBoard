@@ -8,7 +8,7 @@
 
 📥 **直接下载使用**：
 
-1. 前往 [Releases 页面](../../releases) 下载最新版本
+1. 前往 [Releases 页面](https://github.com/14790897/GameBoard/releases) 下载最新版本
 2. 下载 `GameBoard-v*.tar.gz` 压缩包
 3. 解压后运行 `JoystickController.exe`
 
