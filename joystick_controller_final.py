@@ -34,20 +34,14 @@ class GameJoystickController:
         self.key_states = defaultdict(bool)
         self.last_position = {"x": 0, "y": 0}
 
-        # Long press functionality
-        self.button_press_times = {}  # Record button press times
-        self.button_states = {}  # Record button states
-        self.long_press_threshold = 0.2  # Long press threshold (seconds) - 200ms
-        self.long_press_triggered = {}  # Record if long press has been triggered
-        self.short_press_executed = {}  # Record if short press has been executed
-
-        # Button auto-release functionality (Arduino only sends press events)
-        self.button_last_seen = {}  # Record last time button was detected
-        self.button_timeout = 0.15  # Button timeout (seconds) - if no signal received for this time, consider button released
+        # Button functionality - only short press
+        # No long press functionality needed
 
         # Direction key auto-release functionality
         self.last_direction_time = {}  # Record last direction key trigger time
         self.direction_timeout = 0.15  # Direction key timeout (seconds) - quick release when joystick stops
+
+        # Joystick direction immediate response - no delay needed
 
         # Use most compatible input method
         self.use_win32 = WIN32_AVAILABLE
@@ -86,16 +80,9 @@ class GameJoystickController:
             "Joystick NotCenter": None,  # No key mapping
         }
 
-        # Long press mapping configuration
-        self.long_press_mapping = {
-            "Joystick Button": "space",   # Long press joystick button -> Space
-            "Up Button": "up",            # Long press up button -> Up arrow key
-            "Down Button": "down",        # Long press down button -> Down arrow key
-            "Left Button": "left",        # Long press left button -> Left arrow key
-            "Right Button": "right",      # Long press right button -> Right arrow key
-            "E Button": "shift",          # Long press E button -> Shift
-            "F Button": "ctrl",           # Long press F button -> Ctrl
-        }
+        # No long press mapping - only short press functionality
+
+        # Joystick direction uses immediate response - no delay
     
     def get_foreground_window_title(self):
         """Get current active window title"""
@@ -269,53 +256,36 @@ class GameJoystickController:
                 self.key_states[key] = False
 
     def handle_button_press(self, button_name):
-        """Handle button press event"""
-        current_time = time.time()
+        """Handle button press event - immediate short press only"""
+        # Execute short press action immediately
+        short_press_action = f"{button_name} Clicked"
+        if short_press_action in self.key_mapping:
+            keys = self.key_mapping[short_press_action]
+            if keys:
+                self.press_keys(keys)
+                print(f"� Button press: {button_name} -> {'+'.join(keys) if isinstance(keys, list) else keys}")
 
-        # Update last time button was detected
-        self.button_last_seen[button_name] = current_time
 
-        # If button was not pressed before, this is a new press event
-        if not self.button_states.get(button_name, False):
-            # Record press time
-            self.button_press_times[button_name] = current_time
-            self.button_states[button_name] = True
-            self.long_press_triggered[button_name] = False
-            self.short_press_executed[button_name] = False
-            print(f"🔽 Button pressed: {button_name} (waiting to determine short/long press)")
-        # If button is already in pressed state, only update last detection time, don't process repeatedly
+    def handle_joystick_direction_press(self, direction_name):
+        """Handle joystick direction press event - immediate response"""
+        # Execute WASD keys immediately
+        if direction_name in self.key_mapping:
+            keys = self.key_mapping[direction_name]
+            if keys:
+                self.press_keys_continuous(keys)
+                keys_str = '+'.join(keys) if isinstance(keys, list) else keys
+                print(f"🕹️ Joystick direction pressed: {direction_name} -> {keys_str}")
 
-    def handle_button_release(self, button_name):
-        """Handle button release event"""
-        if button_name not in self.button_states or not self.button_states[button_name]:
-            return
+    def handle_joystick_direction_release(self, direction_name):
+        """Handle joystick direction release event"""
+        # Release WASD keys immediately
+        if direction_name in self.key_mapping:
+            keys = self.key_mapping[direction_name]
+            if keys:
+                self.release_keys(keys)
+                keys_str = '+'.join(keys) if isinstance(keys, list) else keys
+                print(f"🔼 Joystick direction released: {direction_name} -> {keys_str}")
 
-        current_time = time.time()
-        press_time = self.button_press_times.get(button_name, current_time)
-        hold_duration = current_time - press_time
-
-        self.button_states[button_name] = False
-
-        # Determine if it's a long press or short press based on duration
-        if hold_duration >= self.long_press_threshold:
-            # Long press: execute long press action
-            long_press_key = self.long_press_mapping.get(button_name)
-            if long_press_key:
-                self.press_keys([long_press_key])  # Execute long press as a key press event
-                print(f"� Long press: {button_name} -> {long_press_key} (duration {hold_duration:.2f}s)")
-        else:
-            # Short press: execute short press action
-            short_press_action = f"{button_name} Clicked"
-            if short_press_action in self.key_mapping:
-                keys = self.key_mapping[short_press_action]
-                if keys:
-                    self.press_keys(keys)
-                    print(f"👆 Short press: {button_name} -> {keys} (duration {hold_duration:.2f}s)")
-
-    def check_long_press(self):
-        """Check if any key has reached long press condition - now disabled, using release-time detection"""
-        # This function is now disabled since we determine long/short press on button release
-        pass
 
     def press_single_key_continuous(self, key):
         """Press single key (continuous state)"""
@@ -351,21 +321,6 @@ class GameJoystickController:
                 self.key_states[key] = False
                 print(f"🔼 Release: {key} ({method})")
 
-    def press_direction_keys(self, keys, direction_data):
-        """处理方向键按下（短按模式）"""
-        if isinstance(keys, str):
-            keys = [keys]
-
-        current_time = time.time()
-
-        # 记录方向键触发时间
-        for key in keys:
-            self.last_direction_time[key] = current_time
-
-        # 执行短按
-        self.press_keys(keys)
-        print(f"🎮 方向短按: {direction_data} -> {'+'.join(keys)}")
-
     def release_all_direction_keys(self):
         """Release all direction keys"""
         direction_keys = ["w", "a", "s", "d"]
@@ -382,7 +337,7 @@ class GameJoystickController:
     def check_direction_timeout(self):
         """Check if direction keys have timed out, release if so"""
         current_time = time.time()
-        direction_keys = ["w", "a", "s", "d"]
+        direction_keys = ["w", "a", "s", "d"]  # Include all possible direction keys that might be pressed
         keys_to_release = []
 
         for key in direction_keys:
@@ -404,25 +359,7 @@ class GameJoystickController:
             if key in self.last_direction_time:
                 del self.last_direction_time[key]
 
-    def check_button_timeout(self):
-        """Check if buttons have timed out, auto-release if so"""
-        current_time = time.time()
-        buttons_to_release = []
-
-        for button_name, last_seen_time in self.button_last_seen.items():
-            if self.button_states.get(button_name, False):
-                time_since_last = current_time - last_seen_time
-                if time_since_last > self.button_timeout:
-                    # Button timeout, auto-release
-                    buttons_to_release.append(button_name)
-
-        # Release timed out buttons
-        for button_name in buttons_to_release:
-            print(f"⏰ Button timeout auto-release: {button_name}")
-            self.handle_button_release(button_name)
-            # Clear record
-            if button_name in self.button_last_seen:
-                del self.button_last_seen[button_name]
+    # Button timeout functionality removed - no long press needed
     
     def connect_serial(self, baudrate=115200):
         """Connect to serial port - auto-find available port"""
@@ -484,9 +421,9 @@ class GameJoystickController:
             return
 
         # Handle position data
-        if "Joystick Position" in data or ("X:" in data and "Y:" in data):
-            self.handle_position_data(data)
-            return
+        # if "Joystick Position" in data or ("X:" in data and "Y:" in data):
+        #     self.handle_position_data(data)
+        #     return
 
         print(f"📡 Received: {data}")
 
@@ -496,9 +433,9 @@ class GameJoystickController:
             return
 
         if "Joystick Center" in data:
-            # Joystick returned to center - immediately release all direction keys
+            # Joystick returned to center - release all direction keys
             self.release_all_direction_keys()
-            print(f"🎯 Joystick returned to center - releasing all WASD keys")
+            print(f"🎯 Joystick returned to center")
             return
 
         # If we haven't received any joystick direction data for a while, release direction keys
@@ -514,17 +451,17 @@ class GameJoystickController:
         if data in self.key_mapping:
             keys = self.key_mapping[data]
             if keys:
-                # Joystick directions use continuous keys (hold)
+                # Joystick directions with immediate response
                 if "Joystick " in data and data != "Joystick Button Clicked":
-                    self.press_keys_continuous(keys)  # Hold direction keys
-                    # Update direction key timestamps
+                    # Handle joystick direction press (immediate response)
+                    self.handle_joystick_direction_press(data)
+                    # Update direction key timestamps for timeout mechanism
                     current_time = time.time()
                     if isinstance(keys, list):
                         for key in keys:
                             self.last_direction_time[key] = current_time
                     else:
                         self.last_direction_time[keys] = current_time
-                    print(f"🎮 Joystick direction: {data} -> Hold {'+'.join(keys) if isinstance(keys, list) else keys}")
                 elif "Clicked" in data:
                     # Button press event: support long press functionality, don't execute short press immediately
                     button_name = data.replace(" Clicked", "").strip()
@@ -534,12 +471,8 @@ class GameJoystickController:
                     self.press_keys_continuous(keys)  # Other events
             return
 
-        # Handle button release events (not used since Arduino doesn't send release events)
-        if "Released" in data:
-            button_name = data.replace(" Released", "").strip()
-            self.handle_button_release(button_name)
-            return
-    
+        # Button release events not needed - immediate short press only
+
     def handle_position_data(self, data):
         """Handle position data"""
         try:
@@ -557,27 +490,14 @@ class GameJoystickController:
                 x_pos = int(x_str)
                 y_pos = int(y_str)
 
-                # Dead zone detection - increased for better center detection
                 dead_zone = 15
-                if abs(x_pos) <= dead_zone and abs(y_pos) <= dead_zone:
-                    # Release all direction keys immediately when centered
-                    self.release_all_direction_keys()
-                    print(f"🎯 Joystick centered: X={x_pos}, Y={y_pos}")
-                else:
-                    # Handle directional movement
-                    self.handle_movement(x_pos, y_pos, dead_zone)
+                self.handle_movement(x_pos, y_pos, dead_zone)
 
         except Exception as e:
             print(f"⚠️  Position data parsing error: {e}")
     
     def handle_movement(self, x_pos, y_pos, dead_zone):
         """Handle movement"""
-        # First release all direction keys
-        direction_keys = ["w", "a", "s", "d"]
-        for key in direction_keys:
-            if self.key_states[key]:
-                self.release_keys(key)
-
         # Determine which keys need to be pressed
         keys_to_press = []
 
@@ -591,10 +511,26 @@ class GameJoystickController:
         elif x_pos > dead_zone:  # Right
             keys_to_press.append("d")
 
-        # Press corresponding keys
-        if keys_to_press:
-            self.press_keys_continuous(keys_to_press)
-            print(f"🎮 Movement: {'+'.join(keys_to_press)} (X={x_pos}, Y={y_pos})")
+        # Get currently pressed direction keys
+        direction_keys = ["w", "a", "s", "d"]
+        currently_pressed = [key for key in direction_keys if self.key_states.get(key, False)]
+
+        # Only change keys if the direction actually changed
+        if set(keys_to_press) != set(currently_pressed):
+            # Release keys that are no longer needed
+            for key in currently_pressed:
+                if key not in keys_to_press:
+                    self.release_keys(key)
+
+            # Press new keys that weren't pressed before
+            for key in keys_to_press:
+                if key not in currently_pressed:
+                    self.press_keys_continuous([key])
+
+            if keys_to_press:
+                print(f"🎮 Movement changed: {'+'.join(keys_to_press)} (X={x_pos}, Y={y_pos})")
+            else:
+                print(f"🎮 Movement stopped (X={x_pos}, Y={y_pos})")
     
     def serial_listener(self):
         """Serial port listening thread"""
@@ -607,15 +543,10 @@ class GameJoystickController:
                     data = self.serial_port.readline().decode('utf-8', errors='ignore')
                     if data:
                         self.process_joystick_data(data)
-
-                # Check long press status
-                self.check_long_press()
-
                 # Check direction key timeout
                 self.check_direction_timeout()
 
-                # Check button timeout
-                self.check_button_timeout()
+                # Button timeout check removed - no long press functionality
 
             except Exception as e:
                 print(f"❌ Serial port read error: {e}")
@@ -671,14 +602,18 @@ class GameJoystickController:
                     keys_str = keys
                 print(f"  {action} -> {keys_str}")
 
-        print(f"\n🎯 Button Long Press Mapping (hold ≥ {self.long_press_threshold}s):")
-        for button_name, long_key in self.long_press_mapping.items():
-            print(f"  {button_name} Long Press -> {long_key}")
+        # Long press functionality removed - only short press available
+
+        print(f"\n🕹️ Joystick Direction Control:")
+        for direction_name, keys in self.key_mapping.items():
+            if "Joystick " in direction_name and direction_name != "Joystick Button Clicked" and keys is not None:
+                keys_str = '+'.join(keys) if isinstance(keys, list) else keys
+                print(f"  {direction_name} -> {keys_str}")
 
         print(f"\n⚠️  Important Notes:")
         print("1. Please ensure game window is active")
         print("2. Recommend setting game to windowed mode")
-        print("3. Supports button short press and long press functionality")
+        print("3. Supports button short press functionality only")
         print("4. If still no response, check game input settings")
         print("\n⌨️  Press Ctrl+C to exit")
         print("-" * 60)
