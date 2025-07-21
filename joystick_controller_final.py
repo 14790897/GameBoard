@@ -10,7 +10,11 @@ import time
 import threading
 import sys
 import ctypes
+from ctypes import wintypes
 from collections import defaultdict
+
+# Import input method manager
+from input_method_manager import InputMethodManager
 
 # Import input libraries
 try:
@@ -42,6 +46,9 @@ class GameJoystickController:
         self.direction_timeout = 0.15  # Direction key timeout (seconds) - quick release when joystick stops
 
         # Joystick direction immediate response - no delay needed
+
+        # Initialize input method manager
+        self.input_method_manager = InputMethodManager()
 
         # Use most compatible input method
         self.use_win32 = WIN32_AVAILABLE
@@ -93,6 +100,12 @@ class GameJoystickController:
             return win32gui.GetWindowText(hwnd)
         except:
             return "Unknown"
+
+    # Input method functions moved to input_method_manager.py
+
+    def switch_to_english_input(self):
+        """Switch to English input method using input method manager"""
+        return self.input_method_manager.switch_to_english_input()
 
     def ensure_game_focus(self):
         """Ensure game window has focus"""
@@ -559,6 +572,9 @@ class GameJoystickController:
         print("=" * 60)
         print("🎮 JoystickController - Final Game Version")
         print("=" * 60)
+
+        # Switch to English input method
+        self.switch_to_english_input()
 
         # Display input method
         method = "Win32 API" if self.use_win32 else "keyboard library"
