@@ -26,7 +26,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install flake8 black isort bandit safety
-        pip install -r requirements.txt
+        # Install only cross-platform dependencies (skip pywin32 on Linux)
+        pip install pyinstaller==6.14.2
+        pip install pyserial>=3.5
+        pip install keyboard>=0.13.5
     
     # - name: Check code formatting with Black
     #   run: |
